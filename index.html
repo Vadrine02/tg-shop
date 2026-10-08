@@ -370,7 +370,8 @@ const PRODUCTS = [
    ================================================================ */
 const $ = (id) => document.getElementById(id);
 const tg = window.Telegram && window.Telegram.WebApp;
-const inTelegram = !!(tg && tg.initData);
+// initData буває порожнім, коли Web App відкрито кнопкою клавіатури, тому дивимось на platform
+const inTelegram = !!(tg && tg.platform && tg.platform !== 'unknown');
 
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
