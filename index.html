@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Аксесуари</title>
+
+<!-- Офіційний скрипт Telegram Web App (не змінювати) -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Unbounded:wght@500;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --ink: #17121f;
+  --surface: #231b2e;
+  --surface-2: #2e243b;
+  --line: rgba(255, 255, 255, .08);
+  --text: #f4ede6;
+  --muted: #a79bb5;
+  --peach: #ffb38a;
+  --lilac: #b49cff;
+  --mint: #7fe0c3;
+  --rose: #ff7a9c;
+  --radius: 20px;
+  --font-display: "Unbounded", "Manrope", system-ui, sans-serif;
+  --font-body: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--ink); color: var(--text); font-family: var(--font-body); }
+body { overflow: hidden; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--peach); outline-offset: 2px; }
+
+/* ---------- Screens ---------- */
+.screen {
+  position: fixed; inset: 0;
+  overflow-y: auto; overflow-x: hidden;
+  opacity: 0; visibility: hidden; transform: translateY(14px);
+  transition: opacity .45s ease, transform .45s ease, visibility 0s linear .45s;
+}
+.screen.active { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+
+/* ---------- Wheel screen ---------- */
+#screenWheel {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: calc(var(--safe-top) + 24px) 20px calc(var(--safe-bottom) + 24px);
+  text-align: center;
+  background: radial-gradient(circle at 50% 42%, rgba(180, 156, 255, .22), transparent 62%), var(--ink);
+}
+.wheel-title { font-family: var(--font-display); font-weight: 700; font-size: 24px; line-height: 1.25; margin: 0 0 10px; }
+.wheel-sub { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 0 0 28px; max-width: 300px; }
+
+.wheel-wrap { position: relative; width: min(84vw, 340px, 46vh); aspect-ratio: 1; margin-bottom: 32px; }
+.wheel-wrap::before { /* soft glow */
+  content: ""; position: absolute; inset: -6%; border-radius: 50%;
+  box-shadow: 0 0 60px rgba(255, 179, 138, .28), 0 0 120px rgba(180, 156, 255, .18);
+  pointer-events: none;
+}
+#wheel {
+  width: 100%; height: 100%; display: block;
+  transition: transform 4s cubic-bezier(.17, .67, .12, .99);
+  will-change: transform; filter: drop-shadow(0 12px 18px rgba(0, 0, 0, .45));
+}
+.pointer {
+  position: absolute; top: -14px; left: 50%; width: 34px; height: 40px; margin-left: -17px; z-index: 3;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .5));
+}
+.hub {
+  position: absolute; top: 50%; left: 50%; width: 22%; aspect-ratio: 1; transform: translate(-50%, -50%);
+  border-radius: 50%; background: var(--ink); border: 4px solid var(--text); z-index: 2;
+  display: grid; place-items: center; font-size: 22px; box-shadow: 0 4px 14px rgba(0, 0, 0, .5);
+}
+
+.btn-primary {
+  width: 100%; max-width: 340px; padding: 17px 24px; border-radius: 16px;
+  background: var(--peach); color: #2a1a12; font-weight: 800; font-size: 17px;
+  box-shadow: 0 10px 24px rgba(255, 179, 138, .28);
+  transition: transform .15s ease, box-shadow .15s ease, opacity .2s ease;
+}
+.btn-primary:active { transform: scale(.97); }
+.btn-primary:disabled { opacity: .5; box-shadow: none; cursor: default; }
+
+/* ---------- Shop screen ---------- */
+#screenShop { padding-bottom: calc(var(--safe-bottom) + 24px); }
+.sticky-top {
+  position: sticky; top: 0; z-index: 10;
+  padding: calc(var(--safe-top) + 12px) 16px 12px;
+  background: rgba(23, 18, 31, .88); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: -.01em; }
+.cart-btn {
+  position: relative; width: 46px; height: 46px; border-radius: 14px;
+  background: var(--surface-2); display: grid; place-items: center; transition: transform .15s ease;
+}
+.cart-btn:active { transform: scale(.94); }
+.cart-btn svg { width: 22px; height: 22px; }
+.badge {
+  position: absolute; top: -6px; right: -6px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
+  background: var(--rose); color: #2a0f18; font-size: 12px; font-weight: 800;
+  display: grid; place-items: center; border: 2px solid var(--ink);
+  transform: scale(0); transition: transform .25s cubic-bezier(.3, 1.6, .5, 1);
+}
+.badge.show { transform: scale(1); }
+.badge.bump { animation: bump .35s ease; }
+@keyframes bump { 50% { transform: scale(1.35); } }
+
+.promo-banner {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px;
+  background: var(--surface-2); border: 1px dashed rgba(255, 179, 138, .55);
+}
+.promo-banner .gift { font-size: 26px; flex: none; }
+.promo-info { flex: 1; min-width: 0; }
+.promo-info b { display: block; font-size: 14px; }
+.promo-info span { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; line-height: 1.35; }
+.code-chip {
+  flex: none; padding: 9px 12px; border-radius: 10px; background: var(--peach); color: #2a1a12;
+  font-weight: 800; font-size: 13px; letter-spacing: .04em;
+}
+
+.catalog-head { padding: 22px 16px 4px; }
+.catalog-head h2 { font-family: var(--font-display); font-weight: 500; font-size: 18px; margin: 0; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px 16px; }
+.card { background: var(--surface); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); display: flex; flex-direction: column; }
+.card-img { position: relative; aspect-ratio: 4 / 5; background: var(--surface-2); display: grid; place-items: center; font-size: 44px; }
+.card-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.card-body { padding: 12px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.card-name { font-weight: 800; font-size: 15px; }
+.card-desc { color: var(--muted); font-size: 12.5px; line-height: 1.4; flex: 1; }
+.card-price { font-weight: 800; font-size: 16px; margin: 6px 0 8px; }
+.btn-add {
+  width: 100%; padding: 11px; border-radius: 12px; background: var(--surface-2); font-weight: 700; font-size: 14px;
+  border: 1px solid var(--line); transition: background .2s ease, color .2s ease, transform .15s ease;
+}
+.btn-add:active { transform: scale(.96); }
+.btn-add.done { background: var(--mint); color: #0e2a22; border-color: transparent; }
+
+/* ---------- Overlays: modal + sheets ---------- */
+.backdrop {
+  position: fixed; inset: 0; z-index: 30; background: rgba(8, 5, 12, .66);
+  opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s linear .3s;
+}
+.backdrop.show { opacity: 1; visibility: visible; transition-delay: 0s; }
+
+.modal {
+  position: fixed; z-index: 40; left: 50%; top: 50%; width: min(88vw, 360px);
+  transform: translate(-50%, -46%) scale(.9); opacity: 0; visibility: hidden;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 28px; padding: 32px 24px 24px; text-align: center;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+  transition: transform .45s cubic-bezier(.3, 1.4, .5, 1), opacity .3s ease, visibility 0s linear .45s;
+}
+.modal.show { transform: translate(-50%, -50%) scale(1); opacity: 1; visibility: visible; transition-delay: 0s; }
+.modal .emoji { font-size: 56px; line-height: 1; margin-bottom: 14px; }
+.modal .kicker { color: var(--muted); font-size: 14px; margin: 0 0 6px; }
+.modal h3 { font-family: var(--font-display); font-size: 22px; line-height: 1.25; margin: 0 0 6px; }
+.modal .prize-sub { color: var(--muted); font-size: 14px; line-height: 1.45; margin: 0 0 18px; }
+.modal .code-box {
+  display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
+  padding: 14px; border-radius: 14px; border: 1px dashed rgba(255, 179, 138, .6); background: var(--surface-2);
+  font-weight: 800; font-size: 20px; letter-spacing: .08em; margin-bottom: 18px;
+}
+.modal .code-box small { font-size: 12px; font-weight: 600; letter-spacing: 0; color: var(--muted); }
+
+.sheet {
+  position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; max-height: 92vh; display: flex; flex-direction: column;
+  background: var(--surface); border-radius: 28px 28px 0 0; border-top: 1px solid var(--line);
+  transform: translateY(105%); transition: transform .4s cubic-bezier(.2, .8, .2, 1);
+  padding: 10px 18px calc(var(--safe-bottom) + 18px);
+}
+.sheet.show { transform: none; }
+.grabber { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 14px; flex: none; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex: none; }
+.sheet-head h3 { font-family: var(--font-display); font-weight: 500; font-size: 18px; margin: 0; }
+.icon-btn { width: 36px; height: 36px; border-radius: 12px; background: var(--surface-2); font-size: 18px; line-height: 1; }
+.sheet-scroll { overflow-y: auto; flex: 1; margin: 0 -18px; padding: 0 18px; }
+
+.empty { text-align: center; color: var(--muted); padding: 36px 0; line-height: 1.5; }
+
+.cart-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.cart-item img, .cart-item .thumb { width: 56px; height: 56px; border-radius: 14px; object-fit: cover; background: var(--surface-2); flex: none; display: grid; place-items: center; }
+.ci-info { flex: 1; min-width: 0; }
+.ci-name { font-weight: 700; font-size: 15px; }
+.ci-price { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.qty { display: flex; align-items: center; gap: 4px; background: var(--surface-2); border-radius: 12px; padding: 3px; }
+.qty button { width: 30px; height: 30px; border-radius: 9px; font-size: 18px; font-weight: 700; }
+.qty button:active { background: var(--line); }
+.qty span { min-width: 22px; text-align: center; font-weight: 800; font-size: 14px; }
+
+.summary { padding: 14px 0 4px; flex: none; }
+.row { display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); padding: 4px 0; }
+.row.accent { color: var(--mint); }
+.row.total { color: var(--text); font-weight: 800; font-size: 18px; padding-top: 10px; margin-top: 6px; border-top: 1px solid var(--line); }
+.note { font-size: 12.5px; color: var(--peach); line-height: 1.4; padding: 6px 0 2px; }
+.sheet .btn-primary { max-width: none; margin-top: 12px; flex: none; }
+
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+.field input {
+  width: 100%; padding: 14px 16px; border-radius: 14px; background: var(--surface-2); color: var(--text);
+  border: 1.5px solid transparent; font: inherit; font-size: 16px; /* 16px — щоб iOS не зумив */
+  transition: border-color .2s ease;
+}
+.field input::placeholder { color: rgba(167, 155, 181, .6); }
+.field input:focus { outline: none; border-color: var(--lilac); }
+.field.invalid input { border-color: var(--rose); }
+.field .err { display: none; color: var(--rose); font-size: 12.5px; margin-top: 5px; }
+.field.invalid .err { display: block; }
+
+.toast {
+  position: fixed; z-index: 60; left: 50%; bottom: calc(var(--safe-bottom) + 28px); transform: translate(-50%, 20px);
+  background: var(--text); color: var(--ink); padding: 11px 18px; border-radius: 12px; font-weight: 700; font-size: 14px;
+  opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease; white-space: nowrap;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .01s !important; animation-duration: .01s !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ ЕКРАН 1: КОЛЕСО ФОРТУНИ ============ -->
+<section id="screenWheel" class="screen active">
+  <h1 class="wheel-title">Крутни колесо — забери бонус</h1>
+  <p class="wheel-sub">Одна спроба. Приз діє на твоє перше замовлення.</p>
+
+  <div class="wheel-wrap">
+    <svg class="pointer" viewBox="0 0 34 40" aria-hidden="true">
+      <path d="M17 40 L2 12 A17 17 0 1 1 32 12 Z" fill="#f4ede6"/>
+      <circle cx="17" cy="14" r="5" fill="#17121f"/>
+    </svg>
+    <svg id="wheel" viewBox="0 0 320 320" role="img" aria-label="Колесо фортуни"></svg>
+    <div class="hub" aria-hidden="true">✦</div>
+  </div>
+
+  <button id="spinBtn" class="btn-primary">Крутити колесо</button>
+</section>
+
+<!-- ============ ЕКРАН 2: МАГАЗИН ============ -->
+<section id="screenShop" class="screen">
+  <div class="sticky-top">
+    <div class="topbar">
+      <div class="brand">Аксесуари</div>
+      <button id="cartBtn" class="cart-btn" aria-label="Відкрити кошик">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/>
+        </svg>
+        <span id="badge" class="badge">0</span>
+      </button>
+    </div>
+    <div id="promoBanner" class="promo-banner" role="button" tabindex="0" aria-label="Скопіювати промокод">
+      <div class="gift" id="promoEmoji">🎁</div>
+      <div class="promo-info">
+        <b id="promoTitle"></b>
+        <span id="promoDesc"></span>
+      </div>
+      <div class="code-chip" id="promoCode"></div>
+    </div>
+  </div>
+
+  <div class="catalog-head"><h2>Каталог</h2></div>
+  <div id="grid" class="grid"></div>
+</section>
+
+<!-- ============ МОДАЛКА ВИГРАШУ ============ -->
+<div id="backdrop" class="backdrop"></div>
+
+<div id="resultModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="prizeTitle">
+  <div class="emoji" id="prizeEmoji"></div>
+  <p class="kicker">Ваш виграш</p>
+  <h3 id="prizeTitle"></h3>
+  <p class="prize-sub" id="prizeSub"></p>
+  <div class="code-box"><span id="prizeCode"></span></div>
+  <button id="toShopBtn" class="btn-primary">Перейти до покупок</button>
+</div>
+
+<!-- ============ КОШИК ============ -->
+<div id="cartSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="cartTitle">
+  <div class="grabber"></div>
+  <div class="sheet-head">
+    <h3 id="cartTitle">Кошик</h3>
+    <button class="icon-btn" data-close aria-label="Закрити">✕</button>
+  </div>
+  <div class="sheet-scroll" id="cartList"></div>
+  <div class="summary" id="cartSummary"></div>
+  <button id="checkoutBtn" class="btn-primary">Оформити</button>
+</div>
+
+<!-- ============ ОФОРМЛЕННЯ ============ -->
+<div id="checkoutSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="coTitle">
+  <div class="grabber"></div>
+  <div class="sheet-head">
+    <h3 id="coTitle">Оформлення</h3>
+    <button class="icon-btn" data-close aria-label="Закрити">✕</button>
+  </div>
+  <form id="orderForm" class="sheet-scroll" novalidate autocomplete="on">
+    <div class="field">
+      <label for="fName">ПІБ</label>
+      <input id="fName" name="name" type="text" autocomplete="name" placeholder="Шевченко Тарас Григорович">
+      <div class="err">Вкажіть прізвище та ім'я</div>
+    </div>
+    <div class="field">
+      <label for="fPhone">Телефон</label>
+      <input id="fPhone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+380 50 123 45 67">
+      <div class="err">Вкажіть коректний номер телефону</div>
+    </div>
+    <div class="field">
+      <label for="fCity">Місто</label>
+      <input id="fCity" name="city" type="text" autocomplete="address-level2" placeholder="Київ">
+      <div class="err">Вкажіть місто</div>
+    </div>
+    <div class="field">
+      <label for="fBranch">Номер відділення Нової Пошти</label>
+      <input id="fBranch" name="branch" type="text" inputmode="numeric" placeholder="25">
+      <div class="err">Вкажіть номер відділення (лише цифри)</div>
+    </div>
+  </form>
+  <div class="summary" id="coSummary"></div>
+  <button id="sendBtn" class="btn-primary">Підтвердити замовлення</button>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* ================================================================
+   НАЛАШТУВАННЯ — змінюйте тут
+   ================================================================ */
+const CONFIG = {
+  // true  — колесо можна крутити щоразу (зручно для тестів)
+  // false — один виграш на користувача (зберігається в localStorage)
+  // Для тесту без зміни коду: додайте до посилання ?reset=1
+  ALLOW_RESPIN: false,
+
+  DELIVERY_FEE: 70,          // вартість доставки, ₴ (має збігатися з DELIVERY_FEE у bot.py)
+  DISCOUNT_PERCENT: 10       // знижка для ACCESS10 (має збігатися з bot.py)
+};
+
+/* Призи. Порядок = порядок секторів за годинниковою стрілкою від верху. */
+const PRIZES = [
+  { code: 'ACCESS10', emoji: '🏷️', title: 'Знижка 10%',          sub: 'Знижка застосується до всього замовлення автоматично.',     color: '#ffb38a', lines: ['Знижка', '10%'] },
+  { code: 'X2BONUS',  emoji: '✨', title: '1+1=3',               sub: 'Купіть два товари — третій у подарунок. Менеджер підтвердить.', color: '#b49cff', lines: ['1+1=3', 'бонус'] },
+  { code: 'FREESHIP', emoji: '🚚', title: 'Безкоштовна доставка', sub: 'Доставку Новою Поштою оплачуємо ми.',                        color: '#7fe0c3', lines: ['Безкоштовна', 'доставка'] },
+  { code: 'GIFT',     emoji: '🎁', title: 'Подарунок-сюрприз',    sub: 'Додамо приємний сюрприз до вашого замовлення.',              color: '#ff7a9c', lines: ['Подарунок-', 'сюрприз'] }
+];
+
+/* Товари. id мають збігатися з CATALOG у bot.py (бот перераховує суму сам).
+   Фото — Unsplash. Якщо якесь не завантажиться, покажеться іконка.
+   Щоб замінити фото — вставте своє посилання в поле img. */
+const PRODUCTS = [
+  { id: 'bag',    emoji: '👜', name: 'Сумка',    desc: 'Шкіряна сумка через плече, натуральна шкіра', price: 2490,
+    img: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=600&q=70' },
+  { id: 'wallet', emoji: '👛', name: 'Гаманець', desc: 'Компактний гаманець на 8 карток',              price: 890,
+    img: 'https://images.unsplash.com/photo-1627123424574-724758594e93?auto=format&fit=crop&w=600&q=70' },
+  { id: 'watch',  emoji: '⌚', name: 'Годинник', desc: 'Мінімалістичний годинник зі сталевим браслетом', price: 3290,
+    img: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=70' },
+  { id: 'belt',   emoji: '🪢', name: 'Ремінь',   desc: 'Класичний шкіряний ремінь, матова пряжка',      price: 690,
+    img: 'https://images.unsplash.com/photo-1624222247344-550fb60583dc?auto=format&fit=crop&w=600&q=70' }
+];
+
+/* ================================================================
+   ДОПОМІЖНЕ
+   ================================================================ */
+const $ = (id) => document.getElementById(id);
+const tg = window.Telegram && window.Telegram.WebApp;
+const inTelegram = !!(tg && tg.initData);
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ігноруємо */ } },
+  del(k) { try { localStorage.removeItem(k); } catch (e) { /* ігноруємо */ } }
+};
+
+const money = (n) => n.toLocaleString('uk-UA') + ' ₴';
+const haptic = (type) => { try { tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(type); } catch (e) {} };
+const tap = () => { try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred('light'); } catch (e) {} };
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (err) {}
+    ta.remove();
+  }
+  toast('Промокод скопійовано');
+}
+
+/* Ініціалізація Telegram */
+if (tg) {
+  tg.ready();
+  tg.expand();
+  try { tg.setHeaderColor('#17121f'); tg.setBackgroundColor('#17121f'); } catch (e) {}
+  try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
+}
+
+/* ================================================================
+   КОЛЕСО
+   ================================================================ */
+const CX = 160, CY = 160, R = 150;
+const SVGNS = 'http://www.w3.org/2000/svg';
+const pt = (deg, rad) => { const a = deg * Math.PI / 180; return [CX + rad * Math.sin(a), CY - rad * Math.cos(a)]; };
+
+function buildWheel() {
+  const svg = $('wheel');
+  const seg = 360 / PRIZES.length;
+
+  // зовнішнє кільце
+  const ring = document.createElementNS(SVGNS, 'circle');
+  ring.setAttribute('cx', CX); ring.setAttribute('cy', CY); ring.setAttribute('r', R + 7);
+  ring.setAttribute('fill', '#f4ede6');
+  svg.appendChild(ring);
+
+  PRIZES.forEach((p, i) => {
+    const a0 = i * seg, a1 = (i + 1) * seg, mid = a0 + seg / 2;
+    const [x0, y0] = pt(a0, R), [x1, y1] = pt(a1, R);
+
+    const path = document.createElementNS(SVGNS, 'path');
+    path.setAttribute('d', `M${CX} ${CY} L${x0} ${y0} A${R} ${R} 0 0 1 ${x1} ${y1} Z`);
+    path.setAttribute('fill', p.color);
+    path.setAttribute('stroke', '#17121f');
+    path.setAttribute('stroke-width', '3');
+    svg.appendChild(path);
+
+    const g = document.createElementNS(SVGNS, 'g');
+    g.setAttribute('transform', `rotate(${mid} ${CX} ${CY})`);
+    g.setAttribute('text-anchor', 'middle');
+    g.setAttribute('fill', '#24151b');
+    g.style.fontFamily = 'Manrope, system-ui, sans-serif';
+
+    const em = document.createElementNS(SVGNS, 'text');
+    em.setAttribute('x', CX); em.setAttribute('y', CY - R * 0.74);
+    em.setAttribute('font-size', '26');
+    em.textContent = p.emoji;
+    g.appendChild(em);
+
+    p.lines.forEach((line, li) => {
+      const tx = document.createElementNS(SVGNS, 'text');
+      tx.setAttribute('x', CX); tx.setAttribute('y', CY - R * 0.50 + li * 17);
+      tx.setAttribute('font-size', '15'); tx.setAttribute('font-weight', '800');
+      tx.textContent = line;
+      g.appendChild(tx);
+    });
+    svg.appendChild(g);
+  });
+}
+
+let rotation = 0;
+let spinning = false;
+
+function spin() {
+  if (spinning) return;
+  spinning = true;
+  $('spinBtn').disabled = true;
+  $('spinBtn').textContent = 'Крутимо…';
+  tap();
+
+  const seg = 360 / PRIZES.length;
+  const idx = Math.floor(Math.random() * PRIZES.length);
+  const center = idx * seg + seg / 2;
+  const jitter = (Math.random() - 0.5) * (seg * 0.6);           // зупинка не строго по центру
+  const desired = (((360 - center - jitter) % 360) + 360) % 360; // потрібний кут
+  const current = ((rotation % 360) + 360) % 360;
+  rotation += 360 * 6 + ((desired - current + 360) % 360);       // 6 повних обертів + доводка
+
+  $('wheel').style.transform = `rotate(${rotation}deg)`;
+
+  let done = false;
+  const finish = () => { if (done) return; done = true; onSpinEnd(idx); };
+  $('wheel').addEventListener('transitionend', finish, { once: true });
+  setTimeout(finish, 4300); // запасний варіант, якщо transitionend не спрацює
+}
+
+let prize = null;
+
+function onSpinEnd(idx) {
+  prize = PRIZES[idx];
+  store.set('ax_prize', prize.code);
+  haptic('success');
+  showResult(prize);
+}
+
+function showResult(p) {
+  $('prizeEmoji').textContent = p.emoji;
+  $('prizeTitle').textContent = p.title;
+  $('prizeSub').textContent = p.sub;
+  $('prizeCode').textContent = p.code;
+  $('backdrop').classList.add('show');
+  $('resultModal').classList.add('show');
+}
+
+/* ================================================================
+   ЕКРАНИ
+   ================================================================ */
+function showScreen(name) {
+  $('screenWheel').classList.toggle('active', name === 'wheel');
+  $('screenShop').classList.toggle('active', name === 'shop');
+}
+
+function goShop() {
+  $('resultModal').classList.remove('show');
+  $('backdrop').classList.remove('show');
+  renderPromo();
+  renderCartUI();
+  showScreen('shop');
+  $('screenShop').scrollTop = 0;
+}
+
+function renderPromo() {
+  if (!prize) return;
+  $('promoEmoji').textContent = prize.emoji;
+  $('promoTitle').textContent = 'Ваш виграш: ' + prize.title;
+  $('promoDesc').textContent = prize.sub;
+  $('promoCode').textContent = prize.code;
+}
+
+/* ================================================================
+   МАГАЗИН І КОШИК
+   ================================================================ */
+const cart = {}; // { productId: qty }
+
+function renderCatalog() {
+  const grid = $('grid');
+  grid.innerHTML = '';
+  PRODUCTS.forEach((p) => {
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-img"><span>${p.emoji}</span></div>
+      <div class="card-body">
+        <div class="card-name">${p.name}</div>
+        <div class="card-desc">${p.desc}</div>
+        <div class="card-price">${money(p.price)}</div>
+        <button class="btn-add" data-id="${p.id}">В кошик</button>
+      </div>`;
+    const img = new Image();
+    img.alt = p.name; img.loading = 'lazy';
+    img.onload = () => card.querySelector('.card-img').appendChild(img);
+    img.src = p.img; // якщо не завантажиться — залишається емодзі-заглушка
+    grid.appendChild(card);
+  });
+}
+
+function addToCart(id, btn) {
+  cart[id] = Math.min((cart[id] || 0) + 1, 20);
+  tap();
+  renderCartUI(true);
+  if (btn) {
+    btn.textContent = 'Додано ✓';
+    btn.classList.add('done');
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => { btn.textContent = 'В кошик'; btn.classList.remove('done'); }, 1100);
+  }
+}
+
+function changeQty(id, delta) {
+  cart[id] = (cart[id] || 0) + delta;
+  if (cart[id] <= 0) delete cart[id];
+  renderCartUI();
+}
+
+function totals() {
+  let subtotal = 0, count = 0;
+  for (const id in cart) {
+    const p = PRODUCTS.find((x) => x.id === id);
+    if (!p) continue;
+    subtotal += p.price * cart[id];
+    count += cart[id];
+  }
+  const code = prize ? prize.code : null;
+  const discount = code === 'ACCESS10' ? Math.round(subtotal * CONFIG.DISCOUNT_PERCENT / 100) : 0;
+  const delivery = count === 0 ? 0 : (code === 'FREESHIP' ? 0 : CONFIG.DELIVERY_FEE);
+  return { subtotal, count, discount, delivery, total: subtotal - discount + delivery, code };
+}
+
+function summaryHTML(t) {
+  let h = `<div class="row"><span>Товари</span><span>${money(t.subtotal)}</span></div>`;
+  if (t.discount) h += `<div class="row accent"><span>Знижка ${CONFIG.DISCOUNT_PERCENT}% (${t.code})</span><span>−${money(t.discount)}</span></div>`;
+  h += `<div class="row ${t.code === 'FREESHIP' ? 'accent' : ''}"><span>Доставка${t.code === 'FREESHIP' ? ' (' + t.code + ')' : ''}</span><span>${t.delivery ? money(t.delivery) : 'Безкоштовно'}</span></div>`;
+  h += `<div class="row total"><span>Разом</span><span>${money(t.total)}</span></div>`;
+  if (t.code === 'X2BONUS') h += `<div class="note">✨ Акцію 1+1=3 (${t.code}) підтвердить менеджер після оформлення.</div>`;
+  if (t.code === 'GIFT') h += `<div class="note">🎁 Подарунок-сюрприз (${t.code}) додамо до замовлення.</div>`;
+  return h;
+}
+
+function renderCartUI(bump) {
+  const t = totals();
+
+  // бейдж кошика
+  const badge = $('badge');
+  badge.textContent = t.count;
+  badge.classList.toggle('show', t.count > 0);
+  if (bump) { badge.classList.remove('bump'); void badge.offsetWidth; badge.classList.add('bump'); }
+
+  // список у кошику
+  const list = $('cartList');
+  if (t.count === 0) {
+    list.innerHTML = '<div class="empty">Кошик порожній.<br>Додайте щось із каталогу.</div>';
+    $('cartSummary').innerHTML = '';
+    $('checkoutBtn').style.display = 'none';
+  } else {
+    list.innerHTML = Object.keys(cart).map((id) => {
+      const p = PRODUCTS.find((x) => x.id === id);
+      return `
+        <div class="cart-item">
+          <div class="thumb">${p.emoji}</div>
+          <div class="ci-info">
+            <div class="ci-name">${p.name}</div>
+            <div class="ci-price">${money(p.price)}</div>
+          </div>
+          <div class="qty">
+            <button data-minus="${id}" aria-label="Менше">−</button>
+            <span>${cart[id]}</span>
+            <button data-plus="${id}" aria-label="Більше">+</button>
+          </div>
+        </div>`;
+    }).join('');
+    $('cartSummary').innerHTML = summaryHTML(t);
+    $('checkoutBtn').style.display = '';
+  }
+  $('coSummary').innerHTML = summaryHTML(t);
+}
+
+/* ---------- Шторки ---------- */
+function openSheet(id) {
+  closeSheets();
+  $('backdrop').classList.add('show');
+  $(id).classList.add('show');
+}
+function closeSheets() {
+  document.querySelectorAll('.sheet').forEach((s) => s.classList.remove('show'));
+  if (!$('resultModal').classList.contains('show')) $('backdrop').classList.remove('show');
+}
+
+/* ================================================================
+   ФОРМА ОФОРМЛЕННЯ
+   ================================================================ */
+const validators = {
+  fName:   (v) => v.trim().split(/\s+/).filter(Boolean).length >= 2 && v.trim().length >= 5,
+  fPhone:  (v) => { const d = v.replace(/\D/g, ''); return d.length >= 10 && d.length <= 13; },
+  fCity:   (v) => v.trim().length >= 2,
+  fBranch: (v) => /^\d{1,5}$/.test(v.trim())
+};
+
+function validateField(id) {
+  const ok = validators[id]($(id).value);
+  $(id).closest('.field').classList.toggle('invalid', !ok);
+  return ok;
+}
+
+function submitOrder() {
+  const allOk = Object.keys(validators).map(validateField).every(Boolean);
+  if (!allOk) {
+    haptic('error');
+    const bad = document.querySelector('.field.invalid input');
+    if (bad) bad.focus();
+    return;
+  }
+
+  const t = totals();
+  if (t.count === 0) { toast('Кошик порожній'); return; }
+
+  // Компактний JSON (ліміт sendData — 4096 байт).
+  // Бот сам перераховує ціни за id, тому суму з клієнта вважає лише довідковою.
+  const payload = {
+    v: 1,
+    promo: t.code,
+    items: Object.keys(cart).map((id) => ({ id, q: cart[id] })),
+    total: t.total,
+    customer: {
+      name: $('fName').value.trim(),
+      phone: $('fPhone').value.trim(),
+      city: $('fCity').value.trim(),
+      branch: $('fBranch').value.trim()
+    }
+  };
+  const json = JSON.stringify(payload);
+
+  if (new TextEncoder().encode(json).length > 4000) { toast('Замовлення надто велике'); return; }
+
+  haptic('success');
+  if (inTelegram) {
+    tg.sendData(json); // Telegram закриє Web App і передасть дані боту
+  } else {
+    // Режим перегляду в браузері (поза Telegram)
+    console.log('Order JSON:', json);
+    alert('Поза Telegram дані не відправляються.\n\nJSON замовлення:\n' + json);
+  }
+}
+
+/* ================================================================
+   ПОДІЇ
+   ================================================================ */
+$('spinBtn').addEventListener('click', spin);
+$('toShopBtn').addEventListener('click', goShop);
+$('backdrop').addEventListener('click', () => { if (!$('resultModal').classList.contains('show')) closeSheets(); });
+document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeSheets));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheets(); });
+
+$('cartBtn').addEventListener('click', () => { renderCartUI(); openSheet('cartSheet'); });
+$('checkoutBtn').addEventListener('click', () => { renderCartUI(); openSheet('checkoutSheet'); });
+$('sendBtn').addEventListener('click', submitOrder);
+$('orderForm').addEventListener('submit', (e) => { e.preventDefault(); submitOrder(); });
+
+$('grid').addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-add');
+  if (btn) addToCart(btn.dataset.id, btn);
+});
+$('cartList').addEventListener('click', (e) => {
+  const plus = e.target.closest('[data-plus]');
+  const minus = e.target.closest('[data-minus]');
+  if (plus) changeQty(plus.dataset.plus, +1);
+  if (minus) changeQty(minus.dataset.minus, -1);
+});
+
+const copyPromo = () => { if (prize) copyText(prize.code); };
+$('promoBanner').addEventListener('click', copyPromo);
+$('promoBanner').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyPromo(); } });
+
+Object.keys(validators).forEach((id) => {
+  $(id).addEventListener('input', () => { if ($(id).closest('.field').classList.contains('invalid')) validateField(id); });
+});
+$('fBranch').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 5); });
+
+/* ================================================================
+   СТАРТ
+   ================================================================ */
+buildWheel();
+renderCatalog();
+renderCartUI();
+
+if (new URLSearchParams(location.search).get('reset') === '1') store.del('ax_prize');
+
+const saved = store.get('ax_prize');
+const savedPrize = PRIZES.find((p) => p.code === saved);
+if (savedPrize && !CONFIG.ALLOW_RESPIN) {
+  prize = savedPrize;   // користувач уже грав — одразу в магазин
+  goShop();
+}
+</script>
+</body>
+</html>
