@@ -31,15 +31,15 @@ from aiogram.types import KeyboardButton, Message, ReplyKeyboardMarkup, WebAppIn
 
 # 1) Токен бота від @BotFather.
 #    Краще задати змінною середовища BOT_TOKEN, але можна вставити прямо сюди.
-BOT_TOKEN = os.getenv("BOT_TOKEN", "ВСТАВТЕ_ТОКЕН_БОТА")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8786502270:AAGwuMug8AyV9DHu1pDJFM2851JxE_h2iE4")
 
 # 2) Ваш Telegram ID (число). Дізнатись можна в боті @userinfobot.
 #    На цей ID приходитимуть замовлення. Не забудьте натиснути /start у своєму боті.
-ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
+ADMIN_ID = int(os.getenv("ADMIN_ID", "899013976"))
 
 # 3) Посилання на index.html (HTTPS обов'язково!).
 #    Для GitHub Pages: https://ВАШ_НІК.github.io/НАЗВА_РЕПОЗИТОРІЮ/
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://ВАШ_НІК.github.io/НАЗВА_РЕПОЗИТОРІЮ/")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://vadrine02.github.io/tg-shop/")
 
 # ----------------------------------------------------------------------
 # Каталог і акції. Мають збігатися з PRODUCTS / CONFIG у index.html.
