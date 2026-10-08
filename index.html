@@ -169,7 +169,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--peach); out
 .modal .code-box small { font-size: 12px; font-weight: 600; letter-spacing: 0; color: var(--muted); }
 
 .sheet {
-  position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; max-height: 92vh; display: flex; flex-direction: column;
+  position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; max-height: var(--vvh, 92vh); display: flex; flex-direction: column;
   background: var(--surface); border-radius: 28px 28px 0 0; border-top: 1px solid var(--line);
   transform: translateY(105%); transition: transform .4s cubic-bezier(.2, .8, .2, 1);
   padding: 10px 18px calc(var(--safe-bottom) + 18px);
@@ -179,7 +179,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--peach); out
 .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex: none; }
 .sheet-head h3 { font-family: var(--font-display); font-weight: 500; font-size: 18px; margin: 0; }
 .icon-btn { width: 36px; height: 36px; border-radius: 12px; background: var(--surface-2); font-size: 18px; line-height: 1; }
-.sheet-scroll { overflow-y: auto; flex: 1; margin: 0 -18px; padding: 0 18px; }
+.sheet-scroll { overflow-y: auto; flex: 1 1 auto; min-height: 0; margin: 0 -18px; padding: 0 18px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 
 .empty { text-align: center; color: var(--muted); padding: 36px 0; line-height: 1.5; }
 
@@ -322,8 +322,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--peach); out
       <input id="fBranch" name="branch" type="text" inputmode="numeric" placeholder="25">
       <div class="err">Вкажіть номер відділення (лише цифри)</div>
     </div>
+    <div class="summary" id="coSummary"></div>
   </form>
-  <div class="summary" id="coSummary"></div>
   <button id="sendBtn" class="btn-primary">Підтвердити замовлення</button>
 </div>
 
@@ -739,6 +739,23 @@ Object.keys(validators).forEach((id) => {
   $(id).addEventListener('input', () => { if ($(id).closest('.field').classList.contains('invalid')) validateField(id); });
 });
 $('fBranch').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 5); });
+
+/* Клавіатура на мобільних: підганяємо висоту шторки під видиму область
+   і прокручуємо активне поле в центр, щоб його було видно. */
+function syncViewport() {
+  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  document.documentElement.style.setProperty('--vvh', Math.round(h * 0.96) + 'px');
+}
+syncViewport();
+if (window.visualViewport) window.visualViewport.addEventListener('resize', syncViewport);
+window.addEventListener('resize', syncViewport);
+if (tg) tg.onEvent && tg.onEvent('viewportChanged', syncViewport);
+
+document.querySelectorAll('#orderForm input').forEach((inp) => {
+  inp.addEventListener('focus', () => {
+    setTimeout(() => inp.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350);
+  });
+});
 
 /* ================================================================
    СТАРТ
