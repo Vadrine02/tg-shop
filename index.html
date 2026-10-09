@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>vadrine</title>
+
+<!-- Офіційний скрипт Telegram Web App (не змінювати) -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg: #0a0a0c;
+  --surface: #131316;
+  --surface-2: #1b1b20;
+  --line: rgba(255, 255, 255, .08);
+  --text: #f1ede6;
+  --muted: #8e8a95;
+  --gold: #c9a45c;
+  --gold-2: #e6cf9a;
+  --wine: #5b2a3a;
+  --ok: #8fd3b0;
+  --err: #ff7a8a;
+  --font-display: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --font-body: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --nav-h: 64px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-body); }
+body { overflow: hidden; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; border: 0; background: none; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+/* ---------- Screens ---------- */
+.screen {
+  position: fixed; inset: 0; overflow-y: auto; overflow-x: hidden;
+  padding-bottom: calc(var(--nav-h) + var(--safe-bottom) + 20px);
+  opacity: 0; visibility: hidden; transform: translateY(10px);
+  transition: opacity .35s ease, transform .35s ease, visibility 0s linear .35s;
+}
+.screen.active { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+
+/* ---------- Header + promo banner ---------- */
+.sticky-top {
+  position: sticky; top: 0; z-index: 10;
+  padding: calc(var(--safe-top) + 10px) 16px 10px;
+  background: rgba(10, 10, 12, .9); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar { display: flex; align-items: center; justify-content: space-between; }
+.brand { font-family: var(--font-display); font-weight: 600; font-size: 26px; letter-spacing: .28em; text-transform: uppercase; padding-left: .28em; }
+.cart-btn { position: relative; width: 44px; height: 44px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); display: grid; place-items: center; transition: transform .15s ease; }
+.cart-btn:active { transform: scale(.94); }
+.cart-btn svg { width: 21px; height: 21px; }
+.badge {
+  position: absolute; top: -6px; right: -6px; min-width: 21px; height: 21px; padding: 0 5px; border-radius: 11px;
+  background: var(--gold); color: #1a1306; font-size: 12px; font-weight: 800; display: grid; place-items: center;
+  border: 2px solid var(--bg); transform: scale(0); transition: transform .25s cubic-bezier(.3, 1.6, .5, 1);
+}
+.badge.show { transform: scale(1); }
+.badge.bump { animation: bump .35s ease; }
+@keyframes bump { 50% { transform: scale(1.35); } }
+
+.promo-banner {
+  display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 10px 12px; border-radius: 14px;
+  background: linear-gradient(135deg, rgba(201, 164, 92, .18), rgba(91, 42, 58, .35));
+  border: 1px solid rgba(201, 164, 92, .45);
+  animation: slideIn .5s cubic-bezier(.2, .8, .2, 1);
+}
+@keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } }
+.pb-icon { font-size: 26px; flex: none; }
+.pb-info { flex: 1; min-width: 0; }
+.pb-info b { display: block; font-size: 13.5px; line-height: 1.25; }
+.pb-info span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+.pb-timer { flex: none; text-align: right; }
+.pb-timer small { display: block; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; }
+.pb-timer b { font-variant-numeric: tabular-nums; color: var(--gold-2); font-size: 15px; }
+
+/* ---------- Wheel widget ---------- */
+.wheel-card {
+  display: flex; align-items: center; gap: 14px; margin: 16px 16px 0; padding: 18px 14px 14px; max-height: 240px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 22px; overflow: hidden;
+  transition: max-height .5s ease, opacity .4s ease, margin .5s ease, padding .5s ease, border-width .5s ease;
+}
+.wheel-card.collapsed { max-height: 0; opacity: 0; margin-top: 0; padding-top: 0; padding-bottom: 0; border-width: 0; }
+.mini-wheel { position: relative; width: 132px; height: 132px; flex: none; }
+.mini-wheel.gone { display: none; }
+.mini-wheel .pointer { position: absolute; top: -9px; left: 50%; width: 22px; height: 26px; margin-left: -11px; z-index: 3; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .6)); }
+.mini-wheel .hub { position: absolute; top: 50%; left: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%; background: var(--bg); border: 2px solid var(--gold-2); z-index: 2; }
+.wheel-svg { width: 100%; height: 100%; display: block; will-change: transform; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .6)); }
+#wheel { transition: transform 4s cubic-bezier(.17, .67, .12, .99); }
+
+/* ---------- Колесо на весь екран ---------- */
+.wheel-full {
+  position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px;
+  padding: calc(var(--safe-top) + 16px) 20px calc(var(--safe-bottom) + 16px); text-align: center;
+  background: radial-gradient(circle at 50% 46%, rgba(201, 164, 92, .22), transparent 60%), var(--bg);
+  opacity: 0; visibility: hidden; transition: opacity .4s ease, visibility 0s linear .4s;
+}
+.wheel-full.open { opacity: 1; visibility: visible; transition-delay: 0s; }
+.wf-head h2 { font-family: var(--font-display); font-weight: 600; font-size: 32px; margin: 8px 0 4px; }
+.wf-sub { margin: 0; color: var(--muted); font-size: 14px; }
+.wf-wheel { position: relative; width: min(84vw, 50vh, 420px); aspect-ratio: 1; transform: scale(.82); transition: transform .6s cubic-bezier(.2, .8, .2, 1); }
+.wheel-full.open .wf-wheel { transform: none; }
+.wheel-full.done .wf-wheel { transform: translateY(-5vh) scale(.88); }
+.wf-wheel::before { content: ""; position: absolute; inset: -5%; border-radius: 50%; box-shadow: 0 0 70px rgba(201, 164, 92, .35); pointer-events: none; }
+.wf-wheel .pointer { position: absolute; top: -20px; left: 50%; width: 38px; height: 44px; margin-left: -19px; z-index: 3; filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .6)); }
+.wf-wheel .hub { position: absolute; top: 50%; left: 50%; width: 15%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; background: var(--bg); border: 4px solid var(--gold-2); z-index: 2; }
+.wf-result {
+  position: absolute; left: 16px; right: 16px; bottom: calc(var(--safe-bottom) + 16px); max-width: 420px; margin: 0 auto;
+  padding: 20px 18px 18px; border-radius: 24px; background: var(--surface); border: 1px solid rgba(201, 164, 92, .45);
+  box-shadow: 0 -20px 60px rgba(0, 0, 0, .55); transform: translateY(130%); transition: transform .55s cubic-bezier(.2, .9, .2, 1);
+}
+.wheel-full.done .wf-result { transform: none; }
+.wf-emoji { font-size: 40px; line-height: 1; }
+.wf-result h3 { font-family: var(--font-display); font-weight: 600; font-size: 26px; margin: 8px 0 2px; }
+.wf-result p { margin: 0 0 12px; color: var(--muted); font-size: 13.5px; }
+.wf-code { display: inline-block; padding: 9px 18px; margin-bottom: 14px; border-radius: 11px; border: 1px dashed rgba(201, 164, 92, .6); background: var(--surface-2); font-weight: 800; letter-spacing: .12em; color: var(--gold-2); }
+@media (max-height: 640px) { .wf-head h2 { font-size: 26px; } .wf-wheel { width: min(76vw, 44vh, 420px); } }
+.wc-info { flex: 1; min-width: 0; }
+.wc-info p { margin: 0 0 12px; font-size: 14.5px; line-height: 1.45; }
+.wc-info p b { color: var(--gold-2); }
+.btn-gold {
+  width: 100%; padding: 14px 18px; border-radius: 14px; font-weight: 800; font-size: 15px; letter-spacing: .02em;
+  background: linear-gradient(135deg, #dcbb74, #b48d47); color: #1a1306;
+  box-shadow: 0 8px 22px rgba(201, 164, 92, .22); transition: transform .15s ease, opacity .2s ease;
+}
+.btn-gold:active { transform: scale(.97); }
+.btn-gold:disabled { opacity: .55; box-shadow: none; cursor: default; }
+
+/* ---------- Catalog ---------- */
+.catalog-head { padding: 24px 16px 2px; display: flex; align-items: baseline; justify-content: space-between; }
+.catalog-head h2 { font-family: var(--font-display); font-weight: 600; font-size: 26px; margin: 0; letter-spacing: .02em; }
+.catalog-head span { color: var(--muted); font-size: 12.5px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; display: flex; flex-direction: column; }
+.card-img { position: relative; aspect-ratio: 4 / 5; background: linear-gradient(160deg, var(--surface-2), #101013); display: grid; place-items: center; font-size: 46px; }
+.card-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.card-body { padding: 12px 12px 12px; display: flex; flex-direction: column; flex: 1; }
+.card-name { font-weight: 800; font-size: 14.5px; line-height: 1.25; }
+.card-desc { color: var(--muted); font-size: 12px; line-height: 1.4; margin-top: 3px; flex: 1; }
+.card-price { font-family: var(--font-display); font-weight: 700; font-size: 22px; color: var(--gold-2); margin: 8px 0 8px; }
+.btn-add { width: 100%; padding: 11px; border-radius: 11px; font-weight: 800; font-size: 13.5px; background: var(--text); color: #131316; transition: transform .15s ease, background .2s ease; }
+.btn-add:active { transform: scale(.96); }
+.btn-add.done { background: var(--gold); }
+.btn-hint { width: 100%; margin-top: 7px; padding: 9px 6px; border-radius: 11px; font-size: 12.5px; font-weight: 700; color: var(--gold-2); border: 1px solid rgba(201, 164, 92, .35); transition: background .2s ease; }
+.btn-hint:active { background: rgba(201, 164, 92, .12); }
+
+/* ---------- Bottom tab bar ---------- */
+.tabbar {
+  position: fixed; z-index: 20; left: 0; right: 0; bottom: 0; height: calc(var(--nav-h) + var(--safe-bottom)); padding-bottom: var(--safe-bottom);
+  display: flex; background: rgba(14, 14, 17, .94); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-top: 1px solid var(--line);
+}
+.tab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: .04em; transition: color .2s ease; }
+.tab svg { width: 23px; height: 23px; }
+.tab.active { color: var(--gold-2); }
+
+/* ---------- Game ---------- */
+.game-head { padding: calc(var(--safe-top) + 14px) 16px 4px; text-align: center; }
+.game-head h2 { font-family: var(--font-display); font-weight: 600; font-size: 28px; margin: 4px 0 2px; letter-spacing: .06em; }
+.game-sub { margin: 0; color: var(--muted); font-size: 12.5px; }
+.scoreboard { display: flex; gap: 10px; padding: 12px 16px 10px; max-width: 420px; margin: 0 auto; }
+.scoreboard > div { flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; text-align: center; }
+.scoreboard small { display: block; color: var(--muted); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; }
+.scoreboard b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.arena-wrap { display: flex; justify-content: center; padding: 0 16px; }
+.arena {
+  position: relative; border-radius: 18px; overflow: hidden; border: 1px solid rgba(201, 164, 92, .35); background: #0e0e11;
+  aspect-ratio: 360 / 540; width: min(100%, 400px, calc((100vh - 330px) * 360 / 540)); touch-action: none;
+}
+@supports (height: 100dvh) { .arena { width: min(100%, 400px, calc((100dvh - 330px) * 360 / 540)); } }
+.arena canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.g-overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  padding: 24px; text-align: center; background: rgba(10, 10, 12, .82); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+}
+.g-overlay h3 { font-family: var(--font-display); font-size: 30px; margin: 0; font-weight: 600; }
+.g-overlay p { margin: 0 0 6px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+.g-overlay .btn-gold { width: auto; padding: 14px 34px; }
+
+/* ---------- Overlays + sheets ---------- */
+.backdrop { position: fixed; inset: 0; z-index: 30; background: rgba(4, 4, 6, .7); opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s linear .3s; }
+.backdrop.show { opacity: 1; visibility: visible; transition-delay: 0s; }
+.sheet {
+  position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; max-height: var(--vvh, 92vh); display: flex; flex-direction: column;
+  background: var(--surface); border-radius: 26px 26px 0 0; border-top: 1px solid var(--line);
+  transform: translateY(105%); transition: transform .4s cubic-bezier(.2, .8, .2, 1);
+  padding: 10px 18px calc(var(--safe-bottom) + 16px);
+}
+.sheet.show { transform: none; }
+.grabber { width: 40px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 12px; flex: none; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex: none; }
+.sheet-head h3 { font-family: var(--font-display); font-weight: 600; font-size: 26px; margin: 0; }
+.icon-btn { width: 36px; height: 36px; border-radius: 11px; background: var(--surface-2); font-size: 17px; line-height: 1; }
+.sheet-scroll { overflow-y: auto; flex: 1 1 auto; min-height: 0; margin: 0 -18px; padding: 0 18px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.sheet > .btn-gold { flex: none; margin-top: 12px; }
+
+.empty { text-align: center; color: var(--muted); padding: 36px 0; line-height: 1.5; }
+.cart-item { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.cart-item .thumb { width: 54px; height: 54px; border-radius: 13px; background: var(--surface-2); flex: none; display: grid; place-items: center; font-size: 24px; overflow: hidden; }
+.ci-info { flex: 1; min-width: 0; }
+.ci-name { font-weight: 700; font-size: 14.5px; }
+.ci-price { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.qty { display: flex; align-items: center; gap: 2px; background: var(--surface-2); border-radius: 11px; padding: 3px; }
+.qty button { width: 30px; height: 30px; border-radius: 8px; font-size: 18px; font-weight: 700; }
+.qty button:active { background: var(--line); }
+.qty span { min-width: 22px; text-align: center; font-weight: 800; font-size: 14px; }
+
+.summary { padding: 14px 0 4px; }
+.row { display: flex; justify-content: space-between; font-size: 14px; color: var(--muted); padding: 4px 0; }
+.row.accent { color: var(--ok); }
+.row.total { color: var(--text); font-weight: 800; font-size: 18px; padding-top: 10px; margin-top: 6px; border-top: 1px solid var(--line); }
+.row.total span:last-child { font-family: var(--font-display); font-size: 24px; color: var(--gold-2); }
+.note { font-size: 12.5px; color: var(--gold-2); line-height: 1.45; padding: 8px 10px; margin-top: 8px; border-radius: 10px; background: rgba(201, 164, 92, .1); }
+
+.field { margin-bottom: 13px; }
+.field > label { display: block; font-size: 12.5px; font-weight: 700; color: var(--muted); margin-bottom: 6px; }
+.field input[type="text"], .field input[type="tel"] {
+  width: 100%; padding: 14px 15px; border-radius: 13px; background: var(--surface-2); color: var(--text);
+  border: 1.5px solid transparent; font: inherit; font-size: 16px; transition: border-color .2s ease;
+}
+.field input::placeholder { color: rgba(142, 138, 149, .6); }
+.field input:focus { outline: none; border-color: var(--gold); }
+.field.invalid input[type="text"], .field.invalid input[type="tel"] { border-color: var(--err); }
+.field .err { display: none; color: var(--err); font-size: 12.5px; margin-top: 5px; }
+.field.invalid .err { display: block; }
+
+.pay-title { font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 18px 0 8px; }
+.pay-opt { display: block; position: relative; margin-bottom: 8px; cursor: pointer; }
+.pay-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.pay-card { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-radius: 14px; background: var(--surface-2); border: 1.5px solid transparent; transition: border-color .2s ease, background .2s ease; }
+.pay-dot { width: 20px; height: 20px; flex: none; border-radius: 50%; border: 2px solid var(--muted); display: grid; place-items: center; transition: border-color .2s ease; }
+.pay-dot::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); transform: scale(0); transition: transform .2s ease; }
+.pay-opt input:checked + .pay-card { border-color: var(--gold); background: rgba(201, 164, 92, .08); }
+.pay-opt input:checked + .pay-card .pay-dot { border-color: var(--gold); }
+.pay-opt input:checked + .pay-card .pay-dot::after { transform: scale(1); }
+.pay-opt input:focus-visible + .pay-card { outline: 2px solid var(--gold); outline-offset: 2px; }
+.pay-text b { display: block; font-size: 14.5px; }
+.pay-text small { color: var(--muted); font-size: 12.5px; }
+
+.toast { position: fixed; z-index: 60; left: 50%; bottom: calc(var(--nav-h) + var(--safe-bottom) + 16px); transform: translate(-50%, 20px); max-width: 90vw; background: var(--text); color: var(--bg); padding: 11px 18px; border-radius: 12px; font-weight: 700; font-size: 13.5px; text-align: center; opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) { * { transition-duration: .01s !important; animation-duration: .01s !important; } }
+</style>
+</head>
+<body>
+
+<!-- ============ ВКЛАДКА 1: КАТАЛОГ ============ -->
+<section id="screenShop" class="screen active">
+  <header class="sticky-top">
+    <div class="topbar">
+      <div class="brand">vadrine</div>
+      <button id="cartBtn" class="cart-btn" aria-label="Відкрити кошик">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>
+        <span id="badge" class="badge">0</span>
+      </button>
+    </div>
+
+    <!-- Банер виграшу з таймером (з'являється після прокрутки) -->
+    <div id="promoBanner" class="promo-banner" hidden>
+      <div class="pb-icon" id="pbIcon">🎁</div>
+      <div class="pb-info"><b id="pbTitle"></b><span id="pbDesc"></span></div>
+      <div class="pb-timer"><small>Термін дії</small><b id="pbTimer">24:00:00</b></div>
+    </div>
+  </header>
+
+  <!-- Компактне колесо фортуни -->
+  <section id="wheelCard" class="wheel-card">
+    <div class="mini-wheel" id="miniWheel">
+      <svg class="pointer" viewBox="0 0 22 26" aria-hidden="true"><path d="M11 26 L2 9 A11 11 0 1 1 20 9 Z" fill="#e6cf9a"/><circle cx="11" cy="9" r="3.2" fill="#0a0a0c"/></svg>
+      <svg id="wheelMini" class="wheel-svg" viewBox="0 0 320 320" role="img" aria-label="Колесо фортуни"></svg>
+      <div class="hub" aria-hidden="true"></div>
+    </div>
+    <div class="wc-info">
+      <p id="wcText"></p>
+      <button id="spinBtn" class="btn-gold">Крутити</button>
+    </div>
+  </section>
+
+  <div class="catalog-head"><h2>Каталог</h2><span>Нова колекція</span></div>
+  <div id="grid" class="grid"></div>
+</section>
+
+<!-- ============ ВКЛАДКА 2: ГРА ============ -->
+<section id="screenGame" class="screen">
+  <div class="game-head">
+    <div class="brand" style="font-size:18px">vadrine</div>
+    <h2>Merge</h2>
+    <p class="game-sub">Зливай однакові аксесуари. Просто для фану — без бонусів.</p>
+  </div>
+  <div class="scoreboard">
+    <div><small>Рахунок</small><b id="gScore">0</b></div>
+    <div><small>Рекорд</small><b id="gBest">0</b></div>
+    <div><small>Далі</small><b id="gNext">💍</b></div>
+  </div>
+  <div class="arena-wrap">
+    <div class="arena" id="arena">
+      <canvas id="gCanvas" aria-label="Ігрове поле"></canvas>
+      <div class="g-overlay" id="gOverlay">
+        <h3 id="gOvTitle">Merge</h3>
+        <p id="gOvText"></p>
+        <button class="btn-gold" id="gOvBtn">Грати</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ НИЖНЄ МЕНЮ ============ -->
+<nav class="tabbar" aria-label="Навігація">
+  <button class="tab active" data-tab="shop">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l1.5-4h13L20 9"/><path d="M4 9v10h16V9"/><path d="M9 19v-5h6v5"/></svg>
+    Магазин
+  </button>
+  <button class="tab" data-tab="game">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="10" rx="5"/><path d="M8 11v4M6 13h4"/><circle cx="15.5" cy="12.5" r=".8" fill="currentColor"/><circle cx="17.5" cy="14.5" r=".8" fill="currentColor"/></svg>
+    Гра
+  </button>
+</nav>
+
+<div id="backdrop" class="backdrop"></div>
+
+<!-- ============ КОШИК ============ -->
+<div id="cartSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="cartTitle">
+  <div class="grabber"></div>
+  <div class="sheet-head"><h3 id="cartTitle">Кошик</h3><button class="icon-btn" data-close aria-label="Закрити">✕</button></div>
+  <div class="sheet-scroll">
+    <div id="cartList"></div>
+    <div class="summary" id="cartSummary"></div>
+  </div>
+  <button id="checkoutBtn" class="btn-gold">Оформити</button>
+</div>
+
+<!-- ============ ОФОРМЛЕННЯ ============ -->
+<div id="checkoutSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="coTitle">
+  <div class="grabber"></div>
+  <div class="sheet-head"><h3 id="coTitle">Оформлення</h3><button class="icon-btn" data-close aria-label="Закрити">✕</button></div>
+  <form id="orderForm" class="sheet-scroll" novalidate autocomplete="on">
+    <div class="field">
+      <label for="fName">ПІБ</label>
+      <input id="fName" name="name" type="text" autocomplete="name" placeholder="Шевченко Тарас Григорович">
+      <div class="err">Вкажіть прізвище та ім'я</div>
+    </div>
+    <div class="field">
+      <label for="fPhone">Телефон</label>
+      <input id="fPhone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+380 50 123 45 67">
+      <div class="err">Вкажіть коректний номер телефону</div>
+    </div>
+    <div class="field">
+      <label for="fCity">Місто</label>
+      <input id="fCity" name="city" type="text" autocomplete="address-level2" placeholder="Київ">
+      <div class="err">Вкажіть місто</div>
+    </div>
+    <div class="field">
+      <label for="fBranch">Відділення Нової Пошти (номер)</label>
+      <input id="fBranch" name="branch" type="text" inputmode="numeric" placeholder="25">
+      <div class="err">Вкажіть номер відділення (лише цифри)</div>
+    </div>
+
+    <!-- Лише коли виграно WESTWOOD -->
+    <div class="field" id="giftField" hidden>
+      <label for="fGift">Яку прикрасу Vivienne Westwood хочете в подарунок?</label>
+      <input id="fGift" name="gift" type="text" maxlength="80" placeholder="Напр.: підвіска-орб або залиште порожнім">
+    </div>
+
+    <div class="pay-title">Спосіб оплати</div>
+    <label class="pay-opt">
+      <input type="radio" name="payment" value="cod" checked>
+      <span class="pay-card"><span class="pay-dot"></span><span class="pay-text"><b>Післяплата</b><small>Накладений платіж Нова Пошта</small></span></span>
+    </label>
+    <label class="pay-opt">
+      <input type="radio" name="payment" value="iban">
+      <span class="pay-card"><span class="pay-dot"></span><span class="pay-text"><b>Оплата за реквізитами</b><small>IBAN / Картка Моно</small></span></span>
+    </label>
+
+    <div class="summary" id="coSummary"></div>
+  </form>
+  <button id="sendBtn" class="btn-gold">Підтвердити замовлення</button>
+</div>
+
+<!-- ============ КОЛЕСО НА ВЕСЬ ЕКРАН (відкривається по «Крутити») ============ -->
+<div id="wheelFull" class="wheel-full" role="dialog" aria-modal="true" aria-labelledby="wfTitle">
+  <div class="wf-head">
+    <div class="brand" style="font-size:20px">vadrine</div>
+    <h2 id="wfTitle">Крутимо колесо…</h2>
+    <p class="wf-sub" id="wfSub">Удачі! 🍀</p>
+  </div>
+  <div class="wf-wheel">
+    <svg class="pointer" viewBox="0 0 22 26" aria-hidden="true"><path d="M11 26 L2 9 A11 11 0 1 1 20 9 Z" fill="#e6cf9a"/><circle cx="11" cy="9" r="3.2" fill="#0a0a0c"/></svg>
+    <svg id="wheel" class="wheel-svg" viewBox="0 0 320 320" role="img" aria-label="Колесо фортуни"></svg>
+    <div class="hub" aria-hidden="true"></div>
+  </div>
+  <div class="wf-result">
+    <div class="wf-emoji" id="wfEmoji"></div>
+    <h3 id="wfPrize"></h3>
+    <p id="wfDesc"></p>
+    <div class="wf-code" id="wfCode"></div>
+    <button id="wfDone" class="btn-gold">До покупок</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* ================================================================
+   НАЛАШТУВАННЯ — змінюйте тут
+   ================================================================ */
+const CONFIG = {
+  // ВСТАВТЕ username вашого бота БЕЗ символу @ (потрібен для кнопки «Натякнути другу» та запрошень)
+  BOT_USERNAME: 'vadrine_bot',
+
+  FREE_SHIP_FROM: 600,     // приз FREESHIP600 діє від цієї суми товарів, ₴ (вартість доставки в суму не входить)
+  PROMO_HOURS: 24,         // термін дії виграного промокоду, годин
+  DEFAULT_SPINS: 1,        // скільки спроб у нового користувача.
+                           // Бот може передати більше через посилання: .../index.html?spins=2
+};
+
+/* Призи. Шанси задаються полем weight (сума = 100).
+   Сектори на колесі однакового розміру, шанс визначається лише вагою. */
+const PRIZES = [
+  { code: 'VAD10',       weight: 30, emoji: '🏷️', label: '−10%',  title: 'Знижка 10%',                 desc: 'на все замовлення',          bg: '#c9a45c', fg: '#1a1306' },
+  { code: 'FREESHIP600', weight: 25, emoji: '🚚', label: '0 ₴',   title: 'Безкоштовна доставка',        desc: 'від 600 ₴ у кошику',         bg: '#26262b', fg: '#f1ede6' },
+  { code: '3FOR2',       weight: 20, emoji: '✨', label: '1+1=3', title: 'Акція «1+1=3»',               desc: 'три товари за ціну двох',    bg: '#e9dcc0', fg: '#1a1306' },
+  { code: 'SECOND20',    weight: 20, emoji: '🛍️', label: '−20%',  title: 'Знижка 20% на другий товар',  desc: 'у вашому чеку',              bg: '#5b2a3a', fg: '#f1ede6' },
+  { code: 'WESTWOOD',    weight: 5,  emoji: '💎', label: 'VW',    title: 'Прикраса Vivienne Westwood',  desc: 'у подарунок, на ваш вибір',  bg: '#9a6b4b', fg: '#fff6ea' }
+];
+
+/* Товари. id та price мають збігатися з каталогом у bot.py.
+   Фото: Unsplash або власні файли (напр. img: 'images/watch.jpg' — покладіть їх у папку images у репозиторії).
+   Якщо фото не завантажиться — покажеться емодзі-заглушка. */
+const PRODUCTS = [
+  { id: 'watch',  emoji: '⌚', name: 'Преміум годинник',  desc: 'Сталевий корпус, сапфірове скло',      price: 3290,
+    img: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=70' },
+  { id: 'wallet', emoji: '👛', name: 'Шкіряний гаманець', desc: 'Натуральна шкіра, 8 відділень для карток', price: 890,
+    img: 'https://images.unsplash.com/photo-1627123424574-724758594e93?auto=format&fit=crop&w=600&q=70' },
+  { id: 'bag',    emoji: '👜', name: 'Сумка крос-боді',   desc: 'Компактна, регульований ремінь',       price: 2490,
+    img: 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=600&q=70' },
+  { id: 'belt',   emoji: '🪢', name: 'Ремінь',            desc: 'Класичний, матова металева пряжка',    price: 690,
+    img: 'https://images.unsplash.com/photo-1624222247344-550fb60583dc?auto=format&fit=crop&w=600&q=70' }
+];
+
+/* ================================================================
+   ДОПОМІЖНЕ
+   ================================================================ */
+const $ = (id) => document.getElementById(id);
+const tg = window.Telegram && window.Telegram.WebApp;
+// initData буває порожнім при запуску з кнопки клавіатури, тому дивимось на platform
+const inTelegram = !!(tg && tg.platform && tg.platform !== 'unknown');
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* ігноруємо */ } },
+  del(k) { try { localStorage.removeItem(k); } catch (e) { /* ігноруємо */ } }
+};
+
+const money = (n) => Math.round(n).toLocaleString('uk-UA') + ' ₴';
+const tap = (style) => { try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred(style || 'light'); } catch (e) {} };
+const notify = (type) => { try { tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(type); } catch (e) {} };
+const plural = (n, one, few, many) => { const a = n % 10, b = n % 100; return (a === 1 && b !== 11) ? one : (a >= 2 && a <= 4 && (b < 12 || b > 14)) ? few : many; };
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+if (tg) {
+  tg.ready();
+  tg.expand();
+  try { tg.setHeaderColor('#0a0a0c'); tg.setBackgroundColor('#0a0a0c'); } catch (e) {}
+  try { tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {} // щоб свайп у грі не закривав застосунок
+}
+
+/* ----------------------------------------------------------------
+   Поширення («Натякнути другу» та запрошення).
+   УВАГА: методу tg.shareToBot() у Telegram Web App API не існує.
+   Правильний спосіб — відкрити діалог пересилання через t.me/share/url.
+   ---------------------------------------------------------------- */
+function shareLink(text) {
+  const uid = (SERVER && SERVER.uid) || (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id);
+  const link = `https://t.me/${CONFIG.BOT_USERNAME}` + (uid ? `?start=ref_${uid}` : '');
+  const url = 'https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent(text);
+  if (tg && tg.openTelegramLink) tg.openTelegramLink(url);
+  else window.open(url, '_blank');
+}
+
+/* ================================================================
+   СТАН БОНУСУ (колесо / промокод) — зберігається в localStorage
+   ================================================================ */
+const STATE_KEY = 'vad_state_v1';
+let state = { prize: null, expires: 0, used: 0, max: CONFIG.DEFAULT_SPINS };
+
+/* ----------------------------------------------------------------
+   Серверний режим. Бот додає до посилання параметри uid, sig та api.
+   Тоді спроби, виграш і 24-годинний таймер живуть у базі бота, а приз
+   обирає сервер (шанси підробити неможливо). Без цих параметрів
+   (наприклад, відкрили сторінку в браузері) працює локальний режим.
+   ---------------------------------------------------------------- */
+const QS = new URLSearchParams(location.search);
+const SERVER = (QS.get('uid') && QS.get('sig') && QS.get('api'))
+  ? { uid: QS.get('uid'), sig: QS.get('sig'), api: QS.get('api').replace(/\/+$/, '') } : null;
+let serverMode = !!SERVER;
+
+async function api(path, body, opts) {
+  opts = opts || {};
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), opts.timeout || 20000);
+  try {
+    let res;
+    if (body === undefined) {
+      res = await fetch(`${SERVER.api}${path}?uid=${encodeURIComponent(SERVER.uid)}&sig=${encodeURIComponent(SERVER.sig)}`, { signal: ctl.signal });
+    } else {
+      res = await fetch(SERVER.api + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ uid: SERVER.uid, sig: SERVER.sig }, body)),
+        signal: ctl.signal,
+        keepalive: !!opts.keepalive
+      });
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Серверна відповідь → локальний стан (у серверному режимі max = скільки спроб лишилось)
+function applyServerState(d) {
+  state.used = 0;
+  state.max = d.attempts;
+  if (d.prize) { state.prize = d.prize.code; state.expires = Date.now() + d.prize.remaining * 1000; }
+  else { state.prize = null; state.expires = 0; }
+}
+const syncFromServer = async () => applyServerState(await api('/api/state', undefined, { timeout: 50000 })); // 50 с: Render може «прокидатися»
+
+/* Кошик → сервер (для нагадування через 30 хв, якщо користувач пішов, не оформивши замовлення) */
+let cartTimer = null, lastReported = -1;
+const cartCount = () => Object.values(cart).reduce((sum, q) => sum + q, 0);
+function flushCart() {
+  clearTimeout(cartTimer); cartTimer = null;
+  if (!serverMode) return;
+  const count = cartCount();
+  if (count === lastReported) return;
+  lastReported = count;
+  api('/api/cart', { count }, { keepalive: true }).catch(() => { lastReported = -1; });
+}
+function reportCart() {
+  if (!serverMode) return;
+  clearTimeout(cartTimer);
+  cartTimer = setTimeout(flushCart, 800);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushCart(); });
+window.addEventListener('pagehide', flushCart);
+
+function loadState() {
+  if (serverMode) return;   // у серверному режимі стан приходить із бота
+  try { Object.assign(state, JSON.parse(store.get(STATE_KEY) || '{}')); } catch (e) {}
+  const fromUrl = parseInt(new URLSearchParams(location.search).get('spins'), 10);
+  state.max = Math.max(state.max || 0, CONFIG.DEFAULT_SPINS, isNaN(fromUrl) ? 0 : fromUrl);
+  saveState();
+}
+function saveState() { if (!serverMode) store.set(STATE_KEY, JSON.stringify(state)); }
+
+const activePrize = () => (state.prize && state.expires > Date.now()) ? PRIZES.find((p) => p.code === state.prize) : null;
+const attemptsLeft = () => Math.max(0, state.max - state.used);
+
+/* ================================================================
+   КОЛЕСО
+   ================================================================ */
+const CX = 160, CY = 160, R = 150;
+const SVGNS = 'http://www.w3.org/2000/svg';
+const pt = (deg, rad) => { const a = deg * Math.PI / 180; return [CX + rad * Math.sin(a), CY - rad * Math.cos(a)]; };
+const SEG = 360 / PRIZES.length;
+
+function buildWheel(svg) {
+  const ring = document.createElementNS(SVGNS, 'circle');
+  ring.setAttribute('cx', CX); ring.setAttribute('cy', CY); ring.setAttribute('r', R + 8);
+  ring.setAttribute('fill', '#e6cf9a');
+  svg.appendChild(ring);
+
+  PRIZES.forEach((p, i) => {
+    const a0 = i * SEG, a1 = (i + 1) * SEG, mid = a0 + SEG / 2;
+    const [x0, y0] = pt(a0, R), [x1, y1] = pt(a1, R);
+    const path = document.createElementNS(SVGNS, 'path');
+    path.setAttribute('d', `M${CX} ${CY} L${x0} ${y0} A${R} ${R} 0 0 1 ${x1} ${y1} Z`);
+    path.setAttribute('fill', p.bg);
+    path.setAttribute('stroke', '#0a0a0c'); path.setAttribute('stroke-width', '3');
+    svg.appendChild(path);
+
+    const g = document.createElementNS(SVGNS, 'g');
+    g.setAttribute('transform', `rotate(${mid} ${CX} ${CY})`);
+    g.setAttribute('text-anchor', 'middle');
+    g.setAttribute('fill', p.fg);
+    g.style.fontFamily = 'Manrope, system-ui, sans-serif';
+
+    const em = document.createElementNS(SVGNS, 'text');
+    em.setAttribute('x', CX); em.setAttribute('y', CY - R * 0.70); em.setAttribute('font-size', '34');
+    em.textContent = p.emoji;
+    g.appendChild(em);
+
+    const tx = document.createElementNS(SVGNS, 'text');
+    tx.setAttribute('x', CX); tx.setAttribute('y', CY - R * 0.40);
+    tx.setAttribute('font-size', '26'); tx.setAttribute('font-weight', '800');
+    tx.textContent = p.label;
+    g.appendChild(tx);
+    svg.appendChild(g);
+  });
+}
+
+function pickPrizeIndex() {
+  let r = Math.random() * PRIZES.reduce((s, p) => s + p.weight, 0);
+  for (let i = 0; i < PRIZES.length; i++) { r -= PRIZES[i].weight; if (r < 0) return i; }
+  return 0;
+}
+
+let rotation = 0, spinning = false;
+
+/* ----- Колесо на весь екран ----- */
+function openWheelFull() {
+  $('wfTitle').textContent = 'Крутимо колесо…';
+  $('wfSub').textContent = 'Удачі! 🍀';
+  $('wheelFull').classList.remove('done');
+  $('wheelFull').classList.add('open');
+}
+function closeWheelFull() { $('wheelFull').classList.remove('open', 'done'); }
+function showWheelResult(p) {
+  $('wfTitle').textContent = '🎉 Вітаємо!';
+  $('wfSub').textContent = 'Бонус уже застосовано до вашого кошика';
+  $('wfEmoji').textContent = p.emoji;
+  $('wfPrize').textContent = p.title;
+  $('wfDesc').textContent = p.desc + ' · діє ' + CONFIG.PROMO_HOURS + ' год';
+  $('wfCode').textContent = p.code;
+  $('wheelFull').classList.add('done');
+}
+
+let serverSpin = null;
+
+async function spin() {
+  if (spinning || attemptsLeft() < 1 || activePrize()) return;
+  spinning = true;
+  $('spinBtn').disabled = true;
+
+  openWheelFull();                                    // колесо розгортається на весь екран
+  await new Promise((r) => setTimeout(r, 450));       // даємо анімації відкриття завершитись
+
+  let idx;
+  serverSpin = null;
+  if (serverMode) {
+    try {
+      const r = await api('/api/spin', {});
+      if (!r.ok) {                       // спроб нема або бонус уже активний
+        applyServerState(r);
+        spinning = false;
+        closeWheelFull();
+        updateBonusUI(); renderCartUI();
+        toast(r.error === 'no_attempts' ? 'Спроб більше немає' : 'Бонус уже активний');
+        return;
+      }
+      serverSpin = r;
+      idx = PRIZES.findIndex((p) => p.code === r.code);
+      if (idx < 0) throw new Error('unknown prize');
+    } catch (e) {
+      spinning = false;
+      closeWheelFull();
+      $('spinBtn').disabled = false;
+      toast('Немає зв\u2019язку із сервером. Спробуйте ще раз');
+      return;
+    }
+  } else {
+    idx = pickPrizeIndex();
+  }
+  const center = idx * SEG + SEG / 2;
+  const jitter = (Math.random() - 0.5) * SEG * 0.6;
+  const desired = (((360 - center - jitter) % 360) + 360) % 360;
+  const current = ((rotation % 360) + 360) % 360;
+  rotation += 360 * 6 + ((desired - current + 360) % 360);
+
+  $('wheel').style.transform = `rotate(${rotation}deg)`;
+
+  // Тактильний відгук: частіше на початку, рідше в кінці (імітація «клацань» колеса)
+  tap('light');
+  const TICKS = 16, DUR = 4000;
+  for (let i = 1; i <= TICKS; i++) setTimeout(() => tap('light'), DUR * Math.pow(i / TICKS, 2));
+
+  let done = false;
+  const finish = () => { if (done) return; done = true; onSpinEnd(idx); };
+  $('wheel').addEventListener('transitionend', finish, { once: true });
+  setTimeout(finish, DUR + 300);
+}
+
+function onSpinEnd(idx) {
+  spinning = false;
+  if (serverMode && serverSpin) {
+    applyServerState({ attempts: serverSpin.attempts, prize: { code: serverSpin.code, remaining: serverSpin.remaining } });
+  } else {
+    state.used += 1;
+    state.prize = PRIZES[idx].code;
+    state.expires = Date.now() + CONFIG.PROMO_HOURS * 3600 * 1000;
+    saveState();
+  }
+  notify('success');
+  updateBonusUI();
+  renderCartUI();
+  showWheelResult(PRIZES[idx]);   // результат показуємо в тому ж повноекранному вікні
+}
+
+/* ----- Банер, таймер, стан віджета ----- */
+let timerId = null;
+
+function fmt(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(Math.floor(s / 3600))}:${p(Math.floor(s % 3600 / 60))}:${p(s % 60)}`;
+}
+
+function tickTimer() {
+  const p = activePrize();
+  if (!p) {
+    // термін минув
+    state.prize = null; state.expires = 0; saveState();
+    clearInterval(timerId); timerId = null;
+    updateBonusUI(); renderCartUI();
+    toast('Термін дії бонусу закінчився');
+    return;
+  }
+  $('pbTimer').textContent = fmt(state.expires - Date.now());
+}
+
+function updateBonusUI() {
+  const p = activePrize();
+  const left = attemptsLeft();
+  const card = $('wheelCard');
+
+  $('promoBanner').hidden = !p;
+  if (p) {
+    $('pbIcon').textContent = p.emoji;
+    $('pbTitle').textContent = 'Ваш бонус: ' + p.title;
+    $('pbDesc').textContent = p.desc + ' · ' + p.code;
+    $('pbTimer').textContent = fmt(state.expires - Date.now());
+    if (!timerId) timerId = setInterval(tickTimer, 1000);
+  }
+
+  // Колесо і кнопка зникають, поки бонус активний
+  card.classList.toggle('collapsed', !!p);
+
+  if (!p && left > 0) {
+    $('miniWheel').classList.remove('gone');
+    $('wcText').innerHTML = `Спроб: <b>${left}</b>. Крути та виграй бонус vadrine!`;
+    $('spinBtn').textContent = 'Крутити';
+    $('spinBtn').dataset.mode = 'spin';
+    $('spinBtn').disabled = false;
+  } else if (!p) {
+    $('miniWheel').classList.add('gone');
+    $('wcText').innerHTML = 'Спроб більше немає. Запроси друга до vadrine — і отримай ще одну!';
+    $('spinBtn').textContent = 'Запросити друга';
+    $('spinBtn').dataset.mode = 'invite';
+    $('spinBtn').disabled = false;
+  }
+}
+
+/* ================================================================
+   КАТАЛОГ І КОШИК
+   ================================================================ */
+const cart = {}; // { productId: qty }
+
+function renderCatalog() {
+  const grid = $('grid');
+  grid.innerHTML = '';
+  PRODUCTS.forEach((p) => {
+    const card = document.createElement('article');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-img"><span>${p.emoji}</span></div>
+      <div class="card-body">
+        <div class="card-name">${p.name}</div>
+        <div class="card-desc">${p.desc}</div>
+        <div class="card-price">${money(p.price)}</div>
+        <button class="btn-add" data-id="${p.id}">В кошик</button>
+        <button class="btn-hint" data-hint="${p.id}">Натякнути другу 🎁</button>
+      </div>`;
+    const img = new Image();
+    img.alt = p.name; img.loading = 'lazy';
+    img.onload = () => card.querySelector('.card-img').appendChild(img);
+    img.src = p.img;
+    grid.appendChild(card);
+  });
+}
+
+function addToCart(id, btn) {
+  cart[id] = Math.min((cart[id] || 0) + 1, 20);
+  tap('light');
+  renderCartUI(true);
+  reportCart();
+  if (btn) {
+    btn.textContent = 'Додано ✓';
+    btn.classList.add('done');
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => { btn.textContent = 'В кошик'; btn.classList.remove('done'); }, 1100);
+  }
+}
+
+function changeQty(id, delta) {
+  cart[id] = (cart[id] || 0) + delta;
+  if (cart[id] <= 0) delete cart[id];
+  renderCartUI();
+  reportCart();
+}
+
+/* ----------------------------------------------------------------
+   Розрахунок з промокодом. Правила (бот має рахувати так само):
+   - VAD10:       −10% від суми товарів
+   - FREESHIP600: доставка 0 ₴, якщо сума товарів ≥ 600 ₴
+   - 3FOR2:       одиниці товарів сортуються від дорогої до дешевої;
+                  кожна третя (найдешевша в трійці) безкоштовна
+   - SECOND20:    −20% на другу за вартістю одиницю товару (потрібно ≥ 2 шт.)
+   - WESTWOOD:    без зміни суми, подарунок додає менеджер
+   ---------------------------------------------------------------- */
+function totals() {
+  const units = [];
+  for (const id in cart) {
+    const p = PRODUCTS.find((x) => x.id === id);
+    if (p) for (let i = 0; i < cart[id]; i++) units.push(p.price);
+  }
+  units.sort((a, b) => b - a);
+  const count = units.length;
+  const subtotal = units.reduce((s, v) => s + v, 0);
+  const prize = activePrize();
+  const code = prize ? prize.code : null;
+
+  let discount = 0, hint = '';
+  if (code === 'VAD10') {
+    discount = Math.round(subtotal * 0.10);
+  } else if (code === '3FOR2') {
+    for (let i = 2; i < count; i += 3) discount += units[i];
+    if (count > 0 && count % 3 !== 0) { const need = 3 - (count % 3); hint = `Додайте ще ${need} ${plural(need, 'товар', 'товари', 'товарів')} — і ${need === 1 ? 'один' : 'найдешевший'} буде безкоштовним (1+1=3).`; }
+  } else if (code === 'SECOND20') {
+    if (count >= 2) discount = Math.round(units[1] * 0.20);
+    else if (count === 1) hint = 'Додайте другий товар — на нього діє знижка 20%.';
+  } else if (code === 'FREESHIP600') {
+    if (count > 0 && subtotal < CONFIG.FREE_SHIP_FROM) hint = `Додайте товарів ще на ${money(CONFIG.FREE_SHIP_FROM - subtotal)} — і доставка безкоштовна.`;
+  } else if (code === 'WESTWOOD') {
+    hint = '💎 Прикрасу Vivienne Westwood на ваш вибір додамо у подарунок.';
+  }
+
+  const freeShip = code === 'FREESHIP600' && subtotal >= CONFIG.FREE_SHIP_FROM;
+  // Вартість доставки в суму не входить: Нова Пошта бере її за своїм тарифом
+  return { count, subtotal, discount, freeShip, total: subtotal - discount, code, prize, hint };
+}
+
+function summaryHTML(t) {
+  let h = `<div class="row"><span>Товари</span><span>${money(t.subtotal)}</span></div>`;
+  if (t.discount) h += `<div class="row accent"><span>Знижка (${t.code})</span><span>−${money(t.discount)}</span></div>`;
+  if (t.freeShip) h += `<div class="row accent"><span>Доставка (${t.code})</span><span>Безкоштовно</span></div>`;
+  h += `<div class="row total"><span>Разом</span><span>${money(t.total)}</span></div>`;
+  if (t.hint) h += `<div class="note">${t.hint}</div>`;
+  return h;
+}
+
+function renderCartUI(bump) {
+  const t = totals();
+
+  const badge = $('badge');
+  badge.textContent = t.count;
+  badge.classList.toggle('show', t.count > 0);
+  if (bump) { badge.classList.remove('bump'); void badge.offsetWidth; badge.classList.add('bump'); }
+
+  const list = $('cartList');
+  if (t.count === 0) {
+    list.innerHTML = '<div class="empty">Кошик порожній.<br>Додайте щось із каталогу.</div>';
+    $('cartSummary').innerHTML = '';
+    $('checkoutBtn').style.display = 'none';
+  } else {
+    list.innerHTML = Object.keys(cart).map((id) => {
+      const p = PRODUCTS.find((x) => x.id === id);
+      return `
+        <div class="cart-item">
+          <div class="thumb">${p.emoji}</div>
+          <div class="ci-info"><div class="ci-name">${p.name}</div><div class="ci-price">${money(p.price)}</div></div>
+          <div class="qty">
+            <button data-minus="${id}" aria-label="Менше">−</button><span>${cart[id]}</span><button data-plus="${id}" aria-label="Більше">+</button>
+          </div>
+        </div>`;
+    }).join('');
+    $('cartSummary').innerHTML = summaryHTML(t);
+    $('checkoutBtn').style.display = '';
+  }
+  $('coSummary').innerHTML = summaryHTML(t);
+  $('giftField').hidden = t.code !== 'WESTWOOD';
+}
+
+/* ---------- Шторки ---------- */
+function openSheet(id) { closeSheets(); $('backdrop').classList.add('show'); $(id).classList.add('show'); }
+function closeSheets() { document.querySelectorAll('.sheet').forEach((s) => s.classList.remove('show')); $('backdrop').classList.remove('show'); }
+
+/* ================================================================
+   ФОРМА ОФОРМЛЕННЯ
+   ================================================================ */
+const validators = {
+  fName:   (v) => v.trim().split(/\s+/).filter(Boolean).length >= 2 && v.trim().length >= 5,
+  fPhone:  (v) => { const d = v.replace(/\D/g, ''); return d.length >= 10 && d.length <= 13; },
+  fCity:   (v) => v.trim().length >= 2,
+  fBranch: (v) => /^\d{1,5}$/.test(v.trim())
+};
+
+function validateField(id) {
+  const ok = validators[id]($(id).value);
+  $(id).closest('.field').classList.toggle('invalid', !ok);
+  return ok;
+}
+
+function submitOrder() {
+  const allOk = Object.keys(validators).map(validateField).every(Boolean);
+  if (!allOk) {
+    notify('error');
+    const bad = document.querySelector('.field.invalid input');
+    if (bad) bad.focus();
+    return;
+  }
+  const t = totals();
+  if (t.count === 0) { toast('Кошик порожній'); return; }
+
+  const payment = (document.querySelector('input[name="payment"]:checked') || {}).value || 'cod';
+
+  // Компактний JSON (ліміт sendData — 4096 байт). Бот перераховує суму сам.
+  const payload = {
+    v: 2,
+    promo: t.code,
+    promo_expires: t.code ? state.expires : null,   // unix ms
+    items: Object.keys(cart).map((id) => ({ id, q: cart[id] })),
+    total: t.total,                                  // довідково, бот перерахує
+    payment,                                         // 'cod' | 'iban'
+    gift_choice: t.code === 'WESTWOOD' ? $('fGift').value.trim().slice(0, 80) : '',
+    customer: {
+      name: $('fName').value.trim(),
+      phone: $('fPhone').value.trim(),
+      city: $('fCity').value.trim(),
+      branch: $('fBranch').value.trim()
+    }
+  };
+  const json = JSON.stringify(payload);
+  if (new TextEncoder().encode(json).length > 4000) { toast('Замовлення надто велике'); return; }
+
+  notify('success');
+  if (inTelegram) {
+    // Промокод одноразовий: погашаємо локально ще до відправки (сервер теж його видалить)
+    state.prize = null; state.expires = 0; saveState();
+    tg.sendData(json); // Telegram закриє Mini App і передасть дані боту
+  } else {
+    console.log('Order JSON:', json);
+    alert('Поза Telegram дані не відправляються.\n\nJSON замовлення:\n' + json);
+  }
+}
+
+/* ================================================================
+   ВКЛАДКИ
+   ================================================================ */
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  $('screenShop').classList.toggle('active', name === 'shop');
+  $('screenGame').classList.toggle('active', name === 'game');
+  closeSheets();
+  if (name === 'game') Game.show(); else Game.hide();
+}
+
+/* ================================================================
+   ГРА MERGE (Matter.js, у стилі Suika)
+   Бібліотека підвантажується лише при першому відкритті вкладки «Гра».
+   ================================================================ */
+const MATTER_URL = 'https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js';
+
+function loadMatter() {
+  return new Promise((resolve, reject) => {
+    if (window.Matter) return resolve();
+    const s = document.createElement('script');
+    s.src = MATTER_URL;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Matter.js не завантажився'));
+    document.head.appendChild(s);
+  });
+}
+
+const Game = (() => {
+  const W = 360, H = 540;      // логічні розміри поля (фізика не залежить від екрана)
+  const WALL = 12;             // товщина видимих стінок
+  const LINE_Y = 100;          // лінія програшу
+  const DROP_Y = 46;           // висота, з якої падають предмети
+  const STEP = 1000 / 60;      // крок фізики, мс
+  const LEVELS = [
+    { e: '💍', r: 14, c: '#e9dcc0' },
+    { e: '🕶️', r: 19, c: '#9a6b4b' },
+    { e: '⌚', r: 25, c: '#c9a45c' },
+    { e: '🧢', r: 31, c: '#7a3a4d' },
+    { e: '🧣', r: 38, c: '#b5736b' },
+    { e: '👛', r: 46, c: '#8b6f9c' },
+    { e: '👜', r: 55, c: '#6c8a7b' },
+    { e: '🎒', r: 64, c: '#c98f5c' },
+    { e: '👑', r: 74, c: '#d8b66e' },
+    { e: '💎', r: 85, c: '#7fb7d6' }
+  ];
+  const MAXL = LEVELS.length - 1;
+
+  let M, engine, world, canvas, ctx, dpr = 1;
+  let ready = false, loading = false, running = false, started = false, over = false;
+  let raf = 0, last = 0, acc = 0;
+  let cur = 0, next = 0, dropX = W / 2, canDrop = true, score = 0, best = 0, overTimer = 0;
+  let pops = [], pending = [];
+
+  const els = { score: $('gScore'), best: $('gBest'), next: $('gNext'), ov: $('gOverlay'), ovT: $('gOvTitle'), ovP: $('gOvText'), ovB: $('gOvBtn') };
+
+  const randLevel = () => { const r = Math.random() * 100; return r < 35 ? 0 : r < 65 ? 1 : r < 85 ? 2 : 3; };
+  const clampX = (x, r) => Math.max(WALL + r, Math.min(W - WALL - r, x));
+  const pieces = () => M.Composite.allBodies(world).filter((b) => b.label === 'piece');
+
+  function overlay(title, text, btn, handler) {
+    els.ovT.textContent = title; els.ovP.textContent = text; els.ovB.textContent = btn;
+    els.ovB.style.display = handler ? '' : 'none';
+    els.ovB.onclick = handler || null;
+    els.ov.hidden = false;
+  }
+
+  function setScore(v) {
+    score = v; els.score.textContent = v;
+    if (v > best) { best = v; els.best.textContent = v; store.set('vad_best', String(v)); }
+  }
+
+  function makePiece(level, x, y) {
+    const L = LEVELS[level];
+    const b = M.Bodies.circle(x, y, L.r, { label: 'piece', restitution: 0.12, friction: 0.35, frictionAir: 0.012, density: 0.0012 });
+    b.level = level; b.born = performance.now(); b.merged = false;
+    M.Composite.add(world, b);
+    return b;
+  }
+
+  function init() {
+    M = window.Matter;
+    canvas = $('gCanvas');
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    ctx = canvas.getContext('2d');
+
+    engine = M.Engine.create({ positionIterations: 8, velocityIterations: 6 });
+    engine.gravity.y = 1.35;
+    world = engine.world;
+
+    const wall = { isStatic: true, label: 'wall', friction: 0.4, restitution: 0 };
+    M.Composite.add(world, [
+      M.Bodies.rectangle(W / 2, H - WALL + 50, W + 400, 100, wall),   // підлога
+      M.Bodies.rectangle(WALL - 50, H / 2, 100, H * 3, wall),          // ліва стінка
+      M.Bodies.rectangle(W - WALL + 50, H / 2, 100, H * 3, wall)       // права стінка
+    ]);
+
+    // Зливання: збираємо пари в колізії, обробляємо після кроку фізики
+    M.Events.on(engine, 'collisionStart', (ev) => {
+      for (const p of ev.pairs) {
+        const a = p.bodyA, b = p.bodyB;
+        if (a.label !== 'piece' || b.label !== 'piece' || a.merged || b.merged || a.level !== b.level) continue;
+        a.merged = b.merged = true;
+        pending.push([a, b]);
+      }
+    });
+
+    // Керування: рух пальцем — позиція, відпускання — скинути
+    const setX = (e) => { const r = canvas.getBoundingClientRect(); dropX = (e.clientX - r.left) * W / r.width; };
+    canvas.addEventListener('pointerdown', (e) => { try { canvas.setPointerCapture(e.pointerId); } catch (err) {} setX(e); });
+    canvas.addEventListener('pointermove', setX);
+    canvas.addEventListener('pointerup', (e) => { setX(e); drop(); });
+
+    best = parseInt(store.get('vad_best'), 10) || 0;
+    els.best.textContent = best;
+    ready = true;
+  }
+
+  function reset() {
+    pieces().forEach((b) => M.Composite.remove(world, b));
+    pending = []; pops = []; overTimer = 0; over = false; canDrop = true;
+    setScore(0);
+    cur = randLevel(); next = randLevel();
+    els.next.textContent = LEVELS[next].e;
+  }
+
+  function begin() { reset(); started = true; els.ov.hidden = true; }
+
+  function drop() {
+    if (!started || over || !canDrop) return;
+    canDrop = false;
+    const x = clampX(dropX, LEVELS[cur].r);
+    makePiece(cur, x, DROP_Y);
+    tap('light');
+    cur = next; next = randLevel();
+    els.next.textContent = LEVELS[next].e;
+    setTimeout(() => { canDrop = true; }, 550);
+  }
+
+  function processMerges() {
+    while (pending.length) {
+      const [a, b] = pending.pop();
+      const lvl = a.level;
+      const x = (a.position.x + b.position.x) / 2, y = (a.position.y + b.position.y) / 2;
+      M.Composite.remove(world, a); M.Composite.remove(world, b);
+      pops.push({ x, y, r: LEVELS[lvl].r, t: 0 });
+      if (lvl >= MAXL) { setScore(score + 500); tap('medium'); continue; } // два 💎 зникають з бонусом
+      makePiece(lvl + 1, x, y);
+      setScore(score + (lvl + 1) * (lvl + 2) * 5);
+      tap(lvl >= 5 ? 'medium' : 'light');
+    }
+  }
+
+  function checkOver(dt) {
+    const now = performance.now();
+    let danger = false;
+    for (const b of pieces()) {
+      if (b.position.y - b.circleRadius < LINE_Y && now - b.born > 1500) { danger = true; break; }
+    }
+    overTimer = danger ? overTimer + dt : 0;
+    if (overTimer > 1200) {
+      over = true;
+      notify('error');
+      overlay('Гру завершено', `Рахунок: ${score}${score >= best && score > 0 ? ' — новий рекорд! 🏆' : ''}`, 'Грати ще', begin);
+    }
+  }
+
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    // фон
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, '#121216'); bg.addColorStop(1, '#0b0b0e');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+    // стінки
+    ctx.fillStyle = 'rgba(201,164,92,.16)';
+    ctx.fillRect(0, 0, WALL, H); ctx.fillRect(W - WALL, 0, WALL, H); ctx.fillRect(0, H - WALL, W, WALL);
+
+    // лінія програшу
+    ctx.save();
+    ctx.setLineDash([8, 8]); ctx.strokeStyle = 'rgba(255,122,138,.55)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(WALL, LINE_Y); ctx.lineTo(W - WALL, LINE_Y); ctx.stroke();
+    ctx.restore();
+
+    // напрямна і наступний предмет
+    if (started && !over) {
+      const L = LEVELS[cur], x = clampX(dropX, L.r);
+      ctx.save();
+      ctx.setLineDash([4, 8]); ctx.strokeStyle = 'rgba(230,207,154,.28)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, DROP_Y + L.r); ctx.lineTo(x, H - WALL); ctx.stroke();
+      ctx.restore();
+      if (canDrop) drawPiece(x, DROP_Y, 0, cur, 0.95);
+    }
+
+    // предмети
+    for (const b of pieces()) drawPiece(b.position.x, b.position.y, b.angle, b.level, 1);
+
+    // ефект зливання
+    for (const p of pops) {
+      ctx.save();
+      ctx.globalAlpha = 1 - p.t; ctx.strokeStyle = '#e6cf9a'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + p.t * 0.9), 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  function drawPiece(x, y, angle, level, alpha) {
+    const L = LEVELS[level];
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(angle); ctx.globalAlpha = alpha;
+    const g = ctx.createRadialGradient(-L.r * 0.3, -L.r * 0.3, L.r * 0.1, 0, 0, L.r);
+    g.addColorStop(0, L.c + 'dd'); g.addColorStop(1, L.c + '55');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, L.r, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.stroke();
+    ctx.font = `${Math.round(L.r * 1.15)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(L.e, 0, L.r * 0.06);
+    ctx.restore();
+  }
+
+  function loop(t) {
+    raf = requestAnimationFrame(loop);
+    const dt = Math.min(t - last, 50); last = t;
+    if (started && !over) {
+      acc += dt;
+      while (acc >= STEP) {
+        M.Engine.update(engine, STEP);
+        processMerges();
+        checkOver(STEP);
+        acc -= STEP;
+      }
+    }
+    for (const p of pops) p.t += dt / 380;
+    pops = pops.filter((p) => p.t < 1);
+    draw();
+  }
+
+  async function show() {
+    if (!ready) {
+      if (loading) return;
+      loading = true;
+      overlay('Завантаження…', 'Готуємо гру', '', null);
+      try {
+        await loadMatter();
+        init();
+        started = false; over = false;
+        overlay('Merge', 'Рухайте пальцем і відпускайте, щоб скинути предмет. Зливайте однакові — і збирайте найбільший 💎', 'Грати', begin);
+      } catch (e) {
+        loading = false;
+        overlay('Не вдалося завантажити', 'Перевірте інтернет і спробуйте ще раз', 'Повторити', () => show());
+        return;
+      }
+      loading = false;
+    }
+    if (!running) { running = true; last = performance.now(); acc = 0; raf = requestAnimationFrame(loop); }
+  }
+
+  function hide() { running = false; cancelAnimationFrame(raf); }
+
+  return { show, hide };
+})();
+
+/* ================================================================
+   ПОДІЇ
+   ================================================================ */
+document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+$('wfDone').addEventListener('click', () => {
+  closeWheelFull();
+  $('screenShop').scrollTo({ top: 0, behavior: 'smooth' });
+  toast('🎉 Бонус застосовано до кошика');
+});
+
+$('spinBtn').addEventListener('click', () => {
+  if ($('spinBtn').dataset.mode === 'invite') shareLink('Заходь у vadrine — крутимо колесо та вигравай бонус на аксесуари 🎁');
+  else spin();
+});
+
+$('backdrop').addEventListener('click', closeSheets);
+document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeSheets));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheets(); });
+
+$('cartBtn').addEventListener('click', () => { renderCartUI(); openSheet('cartSheet'); });
+$('checkoutBtn').addEventListener('click', () => { renderCartUI(); openSheet('checkoutSheet'); });
+$('sendBtn').addEventListener('click', submitOrder);
+$('orderForm').addEventListener('submit', (e) => { e.preventDefault(); submitOrder(); });
+
+$('grid').addEventListener('click', (e) => {
+  const add = e.target.closest('.btn-add');
+  const hint = e.target.closest('.btn-hint');
+  if (add) addToCart(add.dataset.id, add);
+  if (hint) {
+    const p = PRODUCTS.find((x) => x.id === hint.dataset.hint);
+    shareLink(`Мені б дуже хотілося: ${p.name} — ${money(p.price)} 🎁 vadrine`);
+  }
+});
+$('cartList').addEventListener('click', (e) => {
+  const plus = e.target.closest('[data-plus]');
+  const minus = e.target.closest('[data-minus]');
+  if (plus) changeQty(plus.dataset.plus, +1);
+  if (minus) changeQty(minus.dataset.minus, -1);
+});
+
+Object.keys(validators).forEach((id) => {
+  $(id).addEventListener('input', () => { if ($(id).closest('.field').classList.contains('invalid')) validateField(id); });
+});
+$('fBranch').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 5); });
+
+/* Клавіатура: підганяємо висоту шторки під видиму область і прокручуємо поле в центр */
+function syncViewport() {
+  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  document.documentElement.style.setProperty('--vvh', Math.round(h * 0.96) + 'px');
+}
+syncViewport();
+if (window.visualViewport) window.visualViewport.addEventListener('resize', syncViewport);
+window.addEventListener('resize', syncViewport);
+if (tg && tg.onEvent) tg.onEvent('viewportChanged', syncViewport);
+document.querySelectorAll('#orderForm input[type="text"], #orderForm input[type="tel"]').forEach((inp) => {
+  inp.addEventListener('focus', () => setTimeout(() => inp.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350));
+});
+
+/* ================================================================
+   СТАРТ
+   ================================================================ */
+if (new URLSearchParams(location.search).get('reset') === '1') { store.del(STATE_KEY); store.del('vad_best'); }
+
+buildWheel($('wheel'));       // велике колесо (на весь екран)
+buildWheel($('wheelMini'));   // мініатюра у картці
+renderCatalog();
+renderCartUI();
+
+if (serverMode) {
+  $('wheelCard').classList.add('collapsed');   // поки не отримали стан із сервера
+  syncFromServer()
+    .then(() => { lastReported = -1; flushCart(); })   // кошик порожній при відкритті → скидаємо старе нагадування
+    .catch(() => { serverMode = false; toast('Сервер недоступний — працює локальний режим'); loadState(); })
+    .finally(() => { updateBonusUI(); renderCartUI(); });
+} else {
+  loadState();
+  updateBonusUI();
+}
+</script>
+</body>
+</html>
