@@ -73,7 +73,7 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 
 # 3) ПОСИЛАННЯ НА ВАШ MINI APP НА GITHUB PAGES (HTTPS, без параметрів).
 #    Приклад: https://vadrine02.github.io/vadrine/
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://vadrine02.github.io/tg-shop/")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://ВАШ_НІК.github.io/НАЗВА_РЕПОЗИТОРІЮ/")
 
 # 4) Публічна адреса цього бота на Render, напр. https://vadrine-bot.onrender.com
 #    Render сам задає змінну RENDER_EXTERNAL_URL, тому зазвичай нічого вписувати не треба.
@@ -105,7 +105,6 @@ NP_API_KEY = os.getenv("NP_API_KEY", "").strip()
 # Бізнес-налаштування (мають збігатися з index.html)
 # ----------------------------------------------------------------------
 CATALOG = {
-
     "bracelet1":  {"name": "Vivienne Westwood Mayfair Bas Relief Bracelet",  "price": 549},
     "necklace1": {"name": "Vivienne Westwood Mayfair Large Orb Pendant Necklace", "price": 399},
     "necklace2":    {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace чорний",   "price": 399},
@@ -131,7 +130,6 @@ CATALOG = {
     "clutch3":   {"name": "Zadig & Voltaire Rock Quilted Leather Clutch White",            "price": 1399},
     "clutch4":   {"name": "Zadig & Voltaire Rock Quilted Leather Clutch Black",            "price": 1399},
     "clutch5":   {"name": "Zadig & Voltaire Rock Studs Clutch",            "price": 1699},
-
 }
 
 # Призи колеса. weight = шанс у % (сума 100).
@@ -223,21 +221,25 @@ def check_sig(user_id: int, sig: str) -> bool:
     return hmac.compare_digest(make_sig(user_id), str(sig or ""))
 
 
-def webapp_url_for(user_id: int, **extra: str) -> str:
-    """Посилання на Mini App з параметрами: хто користувач і куди слати запити.
-    extra — додаткові параметри, напр. open="orders" (одразу відкрити «Мої замовлення»)."""
+def webapp_url_for(user_id: int) -> str:
+    """Посилання на Mini App з параметрами: хто користувач і куди слати запити."""
     params = {"uid": user_id, "sig": make_sig(user_id)}
     if PUBLIC_URL:
         params["api"] = PUBLIC_URL
-    params.update(extra)
     sep = "&" if "?" in WEBAPP_URL else "?"
     return f"{WEBAPP_URL}{sep}{urlencode(params)}"
 
 
-def webapp_keyboard(user_id: int, text: str = "🛍 Відкрити vadrine", **extra: str) -> ReplyKeyboardMarkup:
+# Текст ПОСТІЙНОЇ кнопки в чаті. Він однаковий у ВСІХ повідомленнях бота (привітання, замовлення,
+# нагадування, сповіщення про ТТН), тому кнопка завжди відкриває каталог магазину. НЕ змінюйте його
+# під окремі повідомлення — інакше кнопка в чаті «перефарбується» під останнє повідомлення.
+WEBAPP_BUTTON_TEXT = "🛍 Відкрити vadrine"
+
+
+def webapp_keyboard(user_id: int) -> ReplyKeyboardMarkup:
     # Саме KeyboardButton (а не Inline) — інакше sendData() не спрацює!
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=text, web_app=WebAppInfo(url=webapp_url_for(user_id, **extra)))]],
+        keyboard=[[KeyboardButton(text=WEBAPP_BUTTON_TEXT, web_app=WebAppInfo(url=webapp_url_for(user_id)))]],
         resize_keyboard=True,
         is_persistent=True,
     )
@@ -593,11 +595,10 @@ class Scheduler:
             text = (
                 f"{name}, ми помітили, що ви залишили товари у кошику. 🛍\n"
                 f"Нагадуємо, що ваш промокод <b>{esc(promo['code'])}</b> діє ще <b>{left}</b>!\n\n"
-                "Завершити замовлення можна кнопкою внизу 👇"
+                f"Щоб завершити замовлення, натисніть «{WEBAPP_BUTTON_TEXT}» внизу 👇"
             )
-            # Кнопка — у reply-клавіатурі, щоб sendData() спрацював після відкриття
-            await self.bot.send_message(user_id, text,
-                                        reply_markup=webapp_keyboard(user_id, "🛍 Завершити замовлення"))
+            # Кнопка — у reply-клавіатурі (з незмінним текстом), щоб sendData() спрацював після відкриття
+            await self.bot.send_message(user_id, text, reply_markup=webapp_keyboard(user_id))
             await dbrun(self.db.mark_reminded, user_id)
             log.info("Надіслано нагадування про кошик користувачу %s", user_id)
         except asyncio.CancelledError:
@@ -1070,8 +1071,9 @@ async def cmd_setttn(message: Message, command: CommandObject, bot: Bot, db: Dat
         await bot.send_message(
             order["user_id"],
             f"{head}\nТТН: <code>{ttn}</code>\n"
-            "Відстежуйте статус у розділі «Мої замовлення».",
-            reply_markup=webapp_keyboard(order["user_id"], "📦 Мої замовлення", open="orders"))
+            "Відстежуйте статус у розділі «Мої замовлення»: відкрийте магазин кнопкою внизу "
+            "й натисніть іконку чека.",
+            reply_markup=webapp_keyboard(order["user_id"]))
         report += "\nКлієнту надіслано сповіщення."
     except TelegramAPIError:
         report += "\n⚠️ Сповістити клієнта не вдалося (можливо, він заблокував бота), але ТТН збережено."
