@@ -73,7 +73,7 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 
 # 3) ПОСИЛАННЯ НА ВАШ MINI APP НА GITHUB PAGES (HTTPS, без параметрів).
 #    Приклад: https://vadrine02.github.io/vadrine/
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://ВАШ_НІК.github.io/НАЗВА_РЕПОЗИТОРІЮ/")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://vadrine02.github.io/tg-shop/")
 
 # 4) Публічна адреса цього бота на Render, напр. https://vadrine-bot.onrender.com
 #    Render сам задає змінну RENDER_EXTERNAL_URL, тому зазвичай нічого вписувати не треба.
