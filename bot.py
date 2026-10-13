@@ -63,11 +63,11 @@ from aiogram.types import FSInputFile, KeyboardButton, Message, ReplyKeyboardMar
 # ======================================================================
 
 # 1) Токен бота від @BotFather.
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8786502270:AAEL0T5ax9aqAhoJ-Js89hV8thf7uofF8OE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "ВСТАВТЕ_ТОКЕН_БОТА")
 
 # 2) Ваш Telegram ID (число) — на нього приходитимуть замовлення.
 #    Дізнатись: бот @userinfobot. Обов'язково натисніть /start у своєму боті!
-ADMIN_ID = int(os.getenv("ADMIN_ID", "899013976"))
+ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 
 # 3) ПОСИЛАННЯ НА ВАШ MINI APP НА GITHUB PAGES (HTTPS, без параметрів).
 #    Приклад: https://vadrine02.github.io/vadrine/
@@ -84,8 +84,8 @@ PUBLIC_URL = (os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "")
 #       TURSO_AUTH_TOKEN   = токен (turso db tokens create назва-бази)
 #    Варіант Б — локальний файл SQLite (якщо Turso не задано). На безкоштовному Render
 #    диск тимчасовий і файл стирається при кожному деплої/перезапуску.
-TURSO_URL = os.getenv("libsql://tgvadrine-vadrine.aws-eu-north-1.turso.io", "").strip()
-TURSO_TOKEN = os.getenv("eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3OTE4NzU1NjcsImlkIjoiMDFhMTMyNGMtYjcwMS03ZDJjLTk2YjUtNDZlZTk0ODYyNzczIiwia2lkIjoiZFZVbjExbjM0emdSZVIwNWJUOXRWRjZJLUhBLVgybWtRVklGODEwTmVYSSIsInJpZCI6ImY4ODI2M2JjLTdiOGYtNGZiOS1hNDE5LWEyMjdlOGZjMzk0YyJ9.wGbygSWHptbdBTa1_22hEjjZ344BUvOpYgedj86cD7BeAbDpXAHUJMCCUa9NRgzjdVbschUVwwiKTxbc_v8ADw", "").strip()
+TURSO_URL = os.getenv("TURSO_DATABASE_URL", "").strip()
+TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "").strip()
 DB_PATH = os.getenv("DB_PATH", "vadrine.db")   # лише для локального режиму
 
 # 6) Реквізити для способу оплати «за реквізитами» — бот надішле їх клієнту після замовлення.
