@@ -499,14 +499,31 @@ const PRIZES = [
    Фото: Unsplash або власні файли (напр. img: 'images/watch.jpg' — покладіть їх у папку images у репозиторії).
    Якщо фото не завантажиться — покажеться емодзі-заглушка. */
 const PRODUCTS = [
-  { id: 'watch',  emoji: '⌚', name: 'Преміум годинник',  desc: 'Сталевий корпус, сапфірове скло',      price: 3290,
-    img: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=70' },
-  { id: 'wallet', emoji: '👛', name: 'Шкіряний гаманець', desc: 'Натуральна шкіра, 8 відділень для карток', price: 890,
-    img: 'https://vadrine02.github.io/tg-shop/images/photo_5341789021362920219_w.jpg?v=1' },
-  { id: 'bag',    emoji: '👜', name: 'Сумка крос-боді',   desc: 'Компактна, регульований ремінь',       price: 2490,
-    img: 'https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=600&q=70' },
-  { id: 'belt',   emoji: '🪢', name: 'Ремінь',            desc: 'Класичний, матова металева пряжка',    price: 690,
-    img: 'https://images.unsplash.com/photo-1624222247344-550fb60583dc?auto=format&fit=crop&w=600&q=70' }
+ { id: 'bracelet1', emoji: '💎', name: 'Vivienne Westwood Mayfair Bas Relief Bracelet', desc: 'Фірмовий дизайн orb, елегантний браслет', price: 549, img: 'https://vadrine02.github.io/tg-shop/images/bracelet1.jpg' },
+  { id: 'necklace1', emoji: '✨', name: 'Vivienne Westwood Mayfair Large Orb Pendant Necklace', desc: 'Великий кулон orb на ланцюжку', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace1.jpg' },
+  { id: 'necklace2', emoji: '🖤', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace чорний', desc: 'Міні-кулон orb, чорний колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace2.jpg' },
+  { id: 'necklace3', emoji: '🩷', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace рожевий', desc: 'Міні-кулон orb, рожевий колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace3.jpg' },
+  { id: 'necklace4', emoji: '💜', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace фіолетовий', desc: 'Міні-кулон orb, фіолетовий колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace4.jpg' },
+  { id: 'necklace5', emoji: '💎', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace прозорий', desc: 'Міні-кулон orb, прозорий кришталь', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace5.jpg' },
+  { id: 'necklace6', emoji: '❤️', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace червоний', desc: 'Міні-кулон orb, червоний колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace6.jpg' },
+  { id: 'necklace7', emoji: '🩵', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace блакитний', desc: 'Міні-кулон orb, блакитний колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace7.jpg' },
+  { id: 'necklace8', emoji: '✨', name: 'Кулон Vivienne Westwood', desc: 'Класичний стильний кулон', price: 299, img: 'https://vadrine02.github.io/tg-shop/images/necklace8.jpg' },
+  { id: 'necklace9', emoji: '📎', name: 'Кулон скріпка Vivienne Westwood', desc: 'Дизайнерський кулон у формі скріпки', price: 299, img: 'https://vadrine02.github.io/tg-shop/images/necklace9.jpg' },
+  { id: 'bracelet2', emoji: '💫', name: 'Vivienne Westwood Lucrece Safety Pin Orb Bracelet', desc: 'Браслет із булавочкою та орбом', price: 449, img: 'https://vadrine02.github.io/tg-shop/images/bracelet2.jpg' },
+  { id: 'necklace10', emoji: '🦇', name: 'Vivienne Westwood Bat Wing Orb Necklace', desc: 'Кулон orb з крилами кажана', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace10.jpg' },
+  { id: 'earrings1', emoji: '✨', name: 'Сережки Vivienne Westwood', desc: 'Фірмові сережки з брендовим символом', price: 299, img: 'https://vadrine02.github.io/tg-shop/images/earrings1.jpg' },
+  { id: 'necklace11', emoji: '🖤', name: 'Vivienne Westwood Ornamental Small Orb Pendant Necklace чорний', desc: 'Малий орнаментальний кулон, чорний', price: 449, img: 'https://vadrine02.github.io/tg-shop/images/necklace11.jpg' },
+  { id: 'necklace12', emoji: '💜', name: 'Vivienne Westwood Ornamental Small Orb Pendant Necklace фіолетовий', desc: 'Малий орнаментальний кулон, фіолетовий', price: 449, img: 'https://vadrine02.github.io/tg-shop/images/necklace12.jpg' },
+  { id: 'necklace13', emoji: '❤️', name: 'Vivienne Westwood New Small Orb Pendant Necklace червоний', desc: 'Новий малий кулон orb, червоний', price: 499, img: 'https://vadrine02.github.io/tg-shop/images/necklace13.jpg' },
+  { id: 'necklace14', emoji: '💙', name: 'Vivienne Westwood New Small Orb Pendant Necklace синій', desc: 'Новий малий кулон orb, синій', price: 499, img: 'https://vadrine02.github.io/tg-shop/images/necklace14.jpg' },
+  { id: 'necklace15', emoji: '🖤', name: 'Vivienne Westwood New Small Orb Pendant Necklace чорний', desc: 'Новий малий кулон orb, чорний', price: 499, img: 'https://vadrine02.github.io/tg-shop/images/necklace15.jpg' },
+  { id: 'wallet1', emoji: '👛', name: 'Vivienne Westwood Vintage Water Orb Tri-Fold Wallet', desc: 'Стильний трискладний гаманець з принтом', price: 1299, img: 'https://vadrine02.github.io/tg-shop/images/wallet1.jpg' },
+  { id: 'necklace16', emoji: '💖', name: 'Pandora Sparkling Heart Collier Necklace', desc: 'Блискуче серце на шию, класика Pandora', price: 499, img: 'https://vadrine02.github.io/tg-shop/images/necklace16.jpg' },
+  { id: 'clutch1', emoji: '👜', name: 'Zadig & Voltaire Rock Clutch White', desc: 'Шкіряний клатч Rock, білий', price: 1399, img: 'https://vadrine02.github.io/tg-shop/images/clutch1.jpg' },
+  { id: 'clutch2', emoji: '🖤', name: 'Zadig & Voltaire Rock Clutch Black', desc: 'Шкіряний клатч Rock, чорний', price: 1399, img: 'https://vadrine02.github.io/tg-shop/images/clutch2.jpg' },
+  { id: 'clutch3', emoji: '🤍', name: 'Zadig & Voltaire Rock Quilted Leather Clutch White', desc: 'стьобаний шкіряний клатч, білий', price: 1399, img: 'https://vadrine02.github.io/tg-shop/images/clutch3.jpg' },
+  { id: 'clutch4', emoji: '🖤', name: 'Zadig & Voltaire Rock Quilted Leather Clutch Black', desc: 'Стьобаний шкіряний клатч, чорний', price: 1399, img: 'https://vadrine02.github.io/tg-shop/images/clutch4.jpg' },
+  { id: 'clutch5', emoji: '✨', name: 'Zadig & Voltaire Rock Studs Clutch', desc: 'Клатч з фірмовими заклёпками Rock Studs', price: 1699, img: 'https://vadrine02.github.io/tg-shop/images/clutch5.jpg' }
 ];
 
 /* ================================================================
@@ -846,19 +863,24 @@ function renderCatalog() {
   PRODUCTS.forEach((p) => {
     const card = document.createElement('article');
     card.className = 'card';
+    
+    // Перевіряємо, чи є для товару власне фото чи лише емодзі
+    const imgHTML = p.img 
+      ? `<img src="${p.img}" alt="${esc(p.name)}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">` 
+      : '';
+
     card.innerHTML = `
-      <div class="card-img"><span>${p.emoji}</span></div>
+      <div class="card-img">
+        ${imgHTML}
+        <span>${p.emoji}</span>
+      </div>
       <div class="card-body">
-        <div class="card-name">${p.name}</div>
-        <div class="card-desc">${p.desc}</div>
+        <div class="card-name">${esc(p.name)}</div>
+        <div class="card-desc">${esc(p.desc)}</div>
         <div class="card-price">${money(p.price)}</div>
         <button class="btn-add" data-id="${p.id}">В кошик</button>
         <button class="btn-hint" data-hint="${p.id}">Натякнути другу 🎁</button>
       </div>`;
-    const img = new Image();
-    img.alt = p.name; img.loading = 'lazy';
-    img.onload = () => card.querySelector('.card-img').appendChild(img);
-    img.src = p.img;
     grid.appendChild(card);
   });
 }

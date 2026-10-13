@@ -98,10 +98,32 @@ PAYMENT_DETAILS = os.getenv(
 # Бізнес-налаштування (мають збігатися з index.html)
 # ----------------------------------------------------------------------
 CATALOG = {
-    "watch":  {"name": "Преміум годинник",  "price": 3290},
-    "wallet": {"name": "Шкіряний гаманець", "price": 890},
-    "bag":    {"name": "Сумка крос-боді",   "price": 2490},
-    "belt":   {"name": "Ремінь",            "price": 690},
+    "bracelet1":  {"name": "Vivienne Westwood Mayfair Bas Relief Bracelet",  "price": 549},
+    "necklace1": {"name": "Vivienne Westwood Mayfair Large Orb Pendant Necklace", "price": 399},
+    "necklace2":    {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace чорний",   "price": 399},
+    "necklace3":   {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace рожевий",            "price": 399},
+    "necklace4":   {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace фіолетовий",            "price": 399},
+    "necklace5":   {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace прозорий",            "price": 399},
+    "necklace6":   {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace червоний",            "price": 399},
+    "necklace7":   {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace блакитний",            "price": 399},
+    "necklace8":   {"name": "Кулон Vivienne Westwood ",            "price": 299},
+    "necklace9":   {"name": "Кулон скріпка Vivienne Westwood",            "price": 299},
+    "bracelet2":  {"name": "Vivienne Westwood Lucrece Safety Pin Orb Bracelet",  "price": 449},
+    "necklace10":   {"name": "Vivienne Westwood Bat Wing Orb Necklace ",            "price": 399},
+    "earrings1":   {"name": "Сережки Vivienne Westwood",            "price": 299},
+    "necklace11":   {"name": "Vivienne Westwood Ornamental Small Orb Pendant Necklace чорний",            "price": 449},
+    "necklace12":   {"name": "Vivienne Westwood Ornamental Small Orb Pendant Necklace фіолетовий",            "price": 449},
+    "necklace13":   {"name": "Vivienne Westwood New Small Orb Pendant Necklace червоний",            "price": 499},
+    "necklace14":   {"name": "Vivienne Westwood New Small Orb Pendant Necklace синій",            "price": 499},
+    "necklace15":   {"name": "Vivienne Westwood New Small Orb Pendant Necklace чорний",            "price": 499},
+    "wallet1":   {"name": "Vivienne Westwood Vintage Water Orb Tri-Fold Wallet",            "price": 1299},
+    "necklace16":   {"name": "Pandora Sparkling Heart Collier Necklace",            "price": 499},
+    "clutch1":   {"name": "Zadig & Voltaire Rock Clutch White",            "price": 1399},
+    "clutch2":   {"name": "Zadig & Voltaire Rock Clutch Black",            "price": 1399},
+    "clutch3":   {"name": "Zadig & Voltaire Rock Quilted Leather Clutch White",            "price": 1399},
+    "clutch4":   {"name": "Zadig & Voltaire Rock Quilted Leather Clutch Black",            "price": 1399},
+    "clutch5":   {"name": "Zadig & Voltaire Rock Studs Clutch",            "price": 1699},
+
 }
 
 # Призи колеса. weight = шанс у % (сума 100).
