@@ -10,6 +10,7 @@ vadrine — серверна частина Telegram Mini App (aiogram 3 + SQLit
   • промокод живе 24 години і видаляється з бази: після замовлення АБО через 24 год;
   • через 30 хвилин нагадує про покинутий кошик;
   • зберігає дані в хмарній базі Turso (або в локальному SQLite, якщо Turso не задано);
+  • відстежує посилки Нової Пошти за ТТН: /setttn (адмін) + кнопка «Відстежити посилку» в Mini App;
   • показує історію замовлень: /myorders у чаті та вкладка «Мої замовлення» в Mini App;
   • приймає замовлення з Mini App (F.web_app_data), перераховує суму сам і
     шле красиве повідомлення адміну та подяку клієнту.
@@ -48,6 +49,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, urlparse
 from zoneinfo import ZoneInfo
 
+import aiohttp                # встановлюється разом з aiogram
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -94,6 +96,11 @@ PAYMENT_DETAILS = os.getenv(
     "IBAN: UA00 0000 0000 0000 0000 0000 00000\nКартка Mono: 0000 0000 0000 0000",
 )
 
+# 7) Ключ API Нової Пошти — НЕОБОВ'ЯЗКОВО. Публічне відстеження за ТТН зазвичай працює й без ключа.
+#    Якщо Нова Пошта почне повертати помилку — отримайте безкоштовний ключ у особистому кабінеті
+#    business.novaposhta.ua (Налаштування → Безпека → Ключі API) і вкажіть його тут або в Render → Environment.
+NP_API_KEY = os.getenv("NP_API_KEY", "").strip()
+
 # ----------------------------------------------------------------------
 # Бізнес-налаштування (мають збігатися з index.html)
 # ----------------------------------------------------------------------
@@ -122,7 +129,7 @@ CATALOG = {
     "clutch2":   {"name": "Zadig & Voltaire Rock Clutch Black",            "price": 1399},
     "clutch3":   {"name": "Zadig & Voltaire Rock Quilted Leather Clutch White",            "price": 1399},
     "clutch4":   {"name": "Zadig & Voltaire Rock Quilted Leather Clutch Black",            "price": 1399},
-    "clutch5":   {"name": "Zadig & Voltaire Rock Studs Clutch",            "price": 1699},
+    "clutch5":   {"name": "Zadig & Voltaire Rock Studs Clutch", 
 
 }
 
@@ -215,19 +222,21 @@ def check_sig(user_id: int, sig: str) -> bool:
     return hmac.compare_digest(make_sig(user_id), str(sig or ""))
 
 
-def webapp_url_for(user_id: int) -> str:
-    """Посилання на Mini App з параметрами: хто користувач і куди слати запити."""
+def webapp_url_for(user_id: int, **extra: str) -> str:
+    """Посилання на Mini App з параметрами: хто користувач і куди слати запити.
+    extra — додаткові параметри, напр. open="orders" (одразу відкрити «Мої замовлення»)."""
     params = {"uid": user_id, "sig": make_sig(user_id)}
     if PUBLIC_URL:
         params["api"] = PUBLIC_URL
+    params.update(extra)
     sep = "&" if "?" in WEBAPP_URL else "?"
     return f"{WEBAPP_URL}{sep}{urlencode(params)}"
 
 
-def webapp_keyboard(user_id: int, text: str = "🛍 Відкрити vadrine") -> ReplyKeyboardMarkup:
+def webapp_keyboard(user_id: int, text: str = "🛍 Відкрити vadrine", **extra: str) -> ReplyKeyboardMarkup:
     # Саме KeyboardButton (а не Inline) — інакше sendData() не спрацює!
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=text, web_app=WebAppInfo(url=webapp_url_for(user_id)))]],
+        keyboard=[[KeyboardButton(text=text, web_app=WebAppInfo(url=webapp_url_for(user_id, **extra)))]],
         resize_keyboard=True,
         is_persistent=True,
     )
@@ -266,7 +275,8 @@ CREATE TABLE IF NOT EXISTS orders (
     total      INTEGER NOT NULL,
     promo_code TEXT,
     payload    TEXT    NOT NULL,
-    details    TEXT
+    details    TEXT,
+    ttn        TEXT
 )
 """
 
@@ -274,7 +284,7 @@ CREATE TABLE IF NOT EXISTS orders (
 USER_COLS = ("user_id", "first_name", "username", "spins_total", "spins_used", "referred_by", "referrals", "created_at")
 PROMO_COLS = ("user_id", "code", "issued_at", "expires_at", "reminded")
 CART_COLS = ("user_id", "item_count", "updated_at")
-ORDER_COLS = ("id", "user_id", "created_at", "total", "promo_code", "payload", "details")
+ORDER_COLS = ("id", "user_id", "created_at", "total", "promo_code", "payload", "details", "ttn")
 
 
 def _sel(cols: tuple) -> str:
@@ -307,11 +317,12 @@ class Database:
             if statement.strip():
                 self.conn.execute(statement)
         self.conn.commit()
-        try:                                            # міграція старих баз: колонка details
-            self.conn.execute("SELECT details FROM orders LIMIT 1").fetchall()
-        except Exception:
-            self.conn.execute("ALTER TABLE orders ADD COLUMN details TEXT")
-            self.conn.commit()
+        for column in ("details", "ttn"):               # міграція старих баз: додаємо нові колонки
+            try:
+                self.conn.execute(f"SELECT {column} FROM orders LIMIT 1").fetchall()
+            except Exception:
+                self.conn.execute(f"ALTER TABLE orders ADD COLUMN {column} TEXT")
+                self.conn.commit()
 
     def close(self) -> None:
         def _close() -> None:
@@ -488,6 +499,20 @@ class Database:
             self.conn.execute("DELETE FROM promos WHERE user_id=?", (user_id,))
             self.conn.execute("DELETE FROM carts WHERE user_id=?", (user_id,))
             return int(order_id), now
+
+    def get_order(self, order_id: int) -> dict | None:
+        with self.lock:
+            return self._one(f"SELECT {_sel(ORDER_COLS)} FROM orders WHERE id=?", (int(order_id),), ORDER_COLS)
+
+    def set_ttn(self, order_id: int, ttn: str) -> None:
+        with self.tx():
+            self.conn.execute("UPDATE orders SET ttn=? WHERE id=?", (ttn, int(order_id)))
+
+    def user_has_ttn(self, user_id: int, ttn: str) -> bool:
+        """Чи належить ця ТТН замовленню користувача (щоб не відстежувати чужі посилки)."""
+        with self.lock:
+            return self.conn.execute("SELECT 1 FROM orders WHERE user_id=? AND ttn=? LIMIT 1",
+                                     (user_id, ttn)).fetchone() is not None
 
     def get_user_orders(self, user_id: int, limit: int = 20) -> list[dict]:
         """Історія замовлень користувача: від нових до старих."""
@@ -704,7 +729,107 @@ def order_view(row: dict) -> dict:
         "id": row["id"], "no": order_number(row["id"], row["created_at"]), "ts": row["created_at"],
         "date": fmt_dt(row["created_at"]), "items": items, "total": row["total"], "promo": row["promo_code"],
         "payment": payment, "payment_label": PAYMENTS[payment], "payment_short": PAYMENT_SHORT[payment],
+        "ttn": row.get("ttn") or None,
     }
+
+
+# ----------------------------------------------------------------------
+# Нова Пошта: відстеження посилки за ТТН (метод getStatusDocuments)
+# ----------------------------------------------------------------------
+NP_URL = "https://api.novaposhta.ua/v2.0/json/"
+NP_CACHE_TTL = 60                      # секунд: не смикаємо API Нової Пошти частіше за раз на хвилину на ТТН
+_np_cache: dict[str, tuple[float, dict]] = {}
+
+# Код статусу Нової Пошти -> (емодзі, зрозумілий текст). Невідомий код — показуємо текст самої Нової Пошти.
+NP_STATUS = {
+    "1":   ("🕐", "Очікує надходження від відправника"),
+    "3":   ("❓", "ТТН ще не з’явилась у системі Нової Пошти"),
+    "4":   ("🚚", "Відправлення в дорозі"),
+    "41":  ("🚚", "Відправлення в дорозі"),
+    "5":   ("🚚", "Прямує до міста одержувача"),
+    "6":   ("🚚", "Доставляється у відділення"),
+    "7":   ("📬", "Прибуло у відділення"),
+    "8":   ("📬", "Прибуло в поштомат"),
+    "9":   ("✅", "Отримано"),
+    "10":  ("✅", "Отримано"),
+    "11":  ("✅", "Отримано"),
+    "12":  ("📦", "Комплектується до відправлення"),
+    "101": ("🚚", "Прямує до одержувача"),
+    "102": ("↩️", "Відмова від отримання — створено повернення"),
+    "103": ("↩️", "Відмова одержувача"),
+}
+NP_RECEIVED = {"9", "10", "11"}
+
+
+def _np_date(value: object) -> str:
+    """'30-12-2026 15:20:00' або '2026-12-30 15:20:00' -> '30.12.2026'."""
+    text = str(value or "")
+    m = re.match(r"(\d{2})[-.](\d{2})[-.](\d{4})", text)
+    if m:
+        return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", text)
+    return f"{m.group(3)}.{m.group(2)}.{m.group(1)}" if m else ""
+
+
+def parse_np_response(data: object) -> dict:
+    """Розбирає відповідь getStatusDocuments у короткий словник для Mini App."""
+    if not isinstance(data, dict) or not data.get("success"):
+        return {"ok": False, "error": "np_error"}
+    rows = data.get("data") or []
+    info = rows[0] if rows and isinstance(rows[0], dict) else None
+    if not info:
+        return {"ok": False, "error": "np_error"}
+    code = str(info.get("StatusCode", "")).strip()
+    np_text = str(info.get("Status", "")).strip()
+    emoji, status = NP_STATUS.get(code, ("📦", np_text or "Статус уточнюється"))
+    received = code in NP_RECEIVED
+    date = _np_date(info.get("RecipientDateTime")) if received else ""
+    date = date or _np_date(info.get("ScheduledDeliveryDate"))
+    return {
+        "ok": True, "number": str(info.get("Number", "")), "code": code, "emoji": emoji,
+        "status": status, "np_status": np_text, "received": received,
+        "city": str(info.get("CityRecipient", "") or "").strip(),
+        "warehouse": str(info.get("WarehouseRecipient", "") or "").strip(),
+        "delivery_date": date,
+    }
+
+
+async def np_track(ttn: str) -> dict:
+    """Запитує статус посилки в Нової Пошти. Результат кешується на хвилину."""
+    now = time.time()
+    cached = _np_cache.get(ttn)
+    if cached and now - cached[0] < NP_CACHE_TTL:
+        return cached[1]
+    payload = {
+        "apiKey": NP_API_KEY,
+        "modelName": "TrackingDocument",
+        "calledMethod": "getStatusDocuments",
+        "methodProperties": {"Documents": [{"DocumentNumber": ttn, "Phone": ""}]},
+    }
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with session.post(NP_URL, json=payload) as resp:
+                data = await resp.json(content_type=None)
+    except Exception as exc:
+        log.warning("Нова Пошта недоступна (ТТН %s): %s", ttn, exc)
+        return {"ok": False, "error": "np_unavailable"}
+    result = parse_np_response(data)
+    if result["ok"]:
+        if len(_np_cache) > 500:
+            _np_cache.clear()
+        _np_cache[ttn] = (now, result)
+    else:
+        log.warning("Нова Пошта повернула помилку для ТТН %s: %s", ttn, str(data)[:300])
+    return result
+
+
+TTN_RE = re.compile(r"\d{10,14}")
+
+
+def parse_order_ref(ref: str) -> int | None:
+    """'VD-1310-5' або '5' -> 5 (id замовлення)."""
+    m = re.fullmatch(r"(?:VD-\d{4}-)?(\d{1,9})", ref.strip(), flags=re.IGNORECASE)
+    return int(m.group(1)) if m else None
 
 
 def promo_notes(order: dict) -> list[str]:
@@ -901,9 +1026,55 @@ async def cmd_myorders(message: Message, db: Database) -> None:
         o = order_view(row)
         items = "\n".join(f"• {esc(i['name'])} × {i['qty']}" for i in o["items"]) or "• —"
         promo = f"\n🎟 {esc(o['promo'])}" if o["promo"] else ""
-        blocks.append(f"<b>{o['no']}</b> · {o['date']}\n{items}{promo}\n"
+        ttn = f"\n📦 ТТН: <code>{esc(o['ttn'])}</code>" if o.get("ttn") else ""
+        blocks.append(f"<b>{o['no']}</b> · {o['date']}\n{items}{promo}{ttn}\n"
                       f"Разом: <b>{money(o['total'])}</b> · {esc(o['payment_short'])}")
     await message.answer("🧾 <b>Ваші останні замовлення</b>\n\n" + "\n\n".join(blocks))
+
+
+@router.message(Command("setttn"), F.from_user.id == ADMIN_ID)
+async def cmd_setttn(message: Message, command: CommandObject, bot: Bot, db: Database) -> None:
+    """Адмін зберігає ТТН і клієнт одразу отримує сповіщення:  /setttn <номер замовлення або id> <ТТН>"""
+    parts = (command.args or "").split()
+    if len(parts) != 2:
+        await message.answer(
+            "📦 <b>Додати ТТН до замовлення</b>\n\n"
+            "<code>/setttn VD-1310-5 20450123456789</code>\n"
+            "<code>/setttn 5 20450123456789</code>\n\n"
+            "Номер замовлення (VD-…) є в повідомленні про замовлення. "
+            "Клієнт отримає сповіщення і побачить ТТН та статус у «Мої замовлення».")
+        return
+    order_id = parse_order_ref(parts[0])
+    ttn = re.sub(r"\s+", "", parts[1])
+    if order_id is None:
+        await message.answer("Не розумію номер замовлення. Приклад: <code>VD-1310-5</code> або <code>5</code>")
+        return
+    if not TTN_RE.fullmatch(ttn):
+        await message.answer("ТТН має містити від 10 до 14 цифр, без літер і пробілів.")
+        return
+    order = await dbrun(db.get_order, order_id)
+    if not order:
+        await message.answer("Замовлення з таким номером не знайдено.")
+        return
+    no = order_number(order["id"], order["created_at"])
+    if order["ttn"] == ttn:
+        await message.answer(f"ℹ️ Для {no} ця ТТН уже збережена, клієнта повторно не сповіщаю.")
+        return
+
+    changed = bool(order["ttn"])
+    await dbrun(db.set_ttn, order_id, ttn)
+    report = f"✅ ТТН <code>{ttn}</code> збережено для {no}."
+    try:
+        head = "📦 <b>ТТН вашого замовлення оновлено!</b>" if changed else "📦 <b>Ваше замовлення відправлено!</b>"
+        await bot.send_message(
+            order["user_id"],
+            f"{head}\nТТН: <code>{ttn}</code>\n"
+            "Відстежуйте статус у розділі «Мої замовлення».",
+            reply_markup=webapp_keyboard(order["user_id"], "📦 Мої замовлення", open="orders"))
+        report += "\nКлієнту надіслано сповіщення."
+    except TelegramAPIError:
+        report += "\n⚠️ Сповістити клієнта не вдалося (можливо, він заблокував бота), але ТТН збережено."
+    await message.answer(report)
 
 
 @router.message(Command("giveall"), F.from_user.id == ADMIN_ID)
@@ -1088,6 +1259,18 @@ async def api_orders(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "orders": [order_view(r) for r in rows]})
 
 
+async def api_track(request: web.Request) -> web.Response:
+    """Статус посилки Нової Пошти для Mini App. Відстежувати можна лише ТТН зі СВОЇХ замовлень."""
+    db: Database = request.app["db"]
+    uid = auth_user(request.query.get("uid"), request.query.get("sig"))
+    ttn = re.sub(r"\s+", "", request.query.get("ttn", ""))
+    if not TTN_RE.fullmatch(ttn):
+        raise web.HTTPBadRequest(text="bad ttn")
+    if not await dbrun(db.user_has_ttn, uid, ttn):
+        return web.json_response({"ok": False, "error": "unknown_ttn"}, status=404)
+    return web.json_response(await np_track(ttn))
+
+
 async def api_cart(request: web.Request) -> web.Response:
     """Mini App повідомляє, скільки товарів у кошику — від цього залежить нагадування."""
     db: Database = request.app["db"]
@@ -1115,6 +1298,7 @@ async def start_http_server(db: Database, scheduler: Scheduler) -> web.AppRunner
     app.router.add_get("/health", api_health)
     app.router.add_get("/api/state", api_state)
     app.router.add_get("/api/orders", api_orders)
+    app.router.add_get("/api/track", api_track)
     app.router.add_post("/api/spin", api_spin)
     app.router.add_post("/api/cart", api_cart)
     runner = web.AppRunner(app)

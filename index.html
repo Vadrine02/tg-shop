@@ -280,6 +280,35 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outl
 .wf-prizes { width: auto; margin-top: 0; padding: 11px 22px; transition: opacity .3s ease; }
 .wheel-full.done .wf-prizes { opacity: 0; pointer-events: none; }
 
+/* ---------- ТТН і відстеження посилки ---------- */
+.oc-ttn { margin: 2px 0 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, .04); border: 1px solid var(--line); }
+.oc-ttn-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.oc-ttn-row > span { font-size: 12.5px; color: var(--muted); }
+.oc-ttn-row b { color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: .02em; word-break: break-all; }
+.oc-track-btn { padding: 9px 13px; border-radius: 10px; font-size: 12.5px; font-weight: 800; background: var(--gold); color: #1a1306; transition: transform .15s ease, opacity .2s ease; }
+.oc-track-btn:active { transform: scale(.96); }
+.oc-track-btn:disabled { opacity: .6; }
+.oc-track-result { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); line-height: 1.5; }
+.tr-status { display: flex; align-items: center; gap: 8px; font-size: 14.5px; }
+.tr-status b { color: var(--gold-2); }
+.tr-done .tr-status b { color: var(--ok); }
+.tr-meta { margin-top: 3px; color: var(--muted); font-size: 12.5px; }
+.tr-error { color: var(--err); }
+
+/* ---------- Кнопка Telegram-каналу ---------- */
+.channel-card {
+  display: flex; align-items: center; gap: 14px; width: calc(100% - 32px); margin: 8px 16px 0; padding: 14px 16px; border-radius: 18px; text-align: left;
+  background: linear-gradient(135deg, rgba(201, 164, 92, .16), rgba(91, 42, 58, .32)); border: 1px solid rgba(201, 164, 92, .4);
+  transition: transform .15s ease, border-color .2s ease;
+}
+.channel-card:active { transform: scale(.98); border-color: var(--gold); }
+.ch-icon { width: 44px; height: 44px; flex: none; border-radius: 14px; display: grid; place-items: center; background: linear-gradient(135deg, #dcbb74, #b48d47); color: #1a1306; }
+.ch-icon svg { width: 22px; height: 22px; }
+.ch-text { flex: 1; min-width: 0; }
+.ch-text b { display: block; font-size: 15px; }
+.ch-text small { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; }
+.ch-arrow { font-size: 28px; line-height: 1; color: var(--gold-2); }
+
 .toast { position: fixed; z-index: 60; left: 50%; bottom: calc(var(--nav-h) + var(--safe-bottom) + 16px); transform: translate(-50%, 20px); max-width: 90vw; background: var(--text); color: var(--bg); padding: 11px 18px; border-radius: 12px; font-weight: 700; font-size: 13.5px; text-align: center; opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
@@ -328,6 +357,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outl
 
   <div class="catalog-head"><h2>Каталог</h2><span>Нова колекція</span></div>
   <div id="grid" class="grid"></div>
+
+  <!-- Кнопка Telegram-каналу (показується, коли в CONFIG.TELEGRAM_CHANNEL вказано ваше посилання) -->
+  <button id="channelBtn" class="channel-card" hidden>
+    <span class="ch-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M21.5 3.5L2.8 10.7l5.4 2.1 2.1 6.4 3.2-3.9 4.9 3.7z"/><path d="M8.2 12.8l13.3-9.3"/></svg></span>
+    <span class="ch-text"><b>Наш Telegram-канал</b><small>Новинки, знижки та закриті розпродажі</small></span>
+    <span class="ch-arrow">›</span>
+  </button>
 </section>
 
 <!-- ============ ВКЛАДКА 2: ГРА ============ -->
@@ -476,6 +512,10 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outl
    НАЛАШТУВАННЯ — змінюйте тут
    ================================================================ */
 const CONFIG = {
+  // Посилання на ВАШ Telegram-канал (кнопка внизу каталогу). Змініть your_channel на назву каналу.
+  // Поки тут лишається 'your_channel' — кнопка прихована.
+  TELEGRAM_CHANNEL: 'https://t.me/your_channel',
+
   // ВСТАВТЕ username вашого бота БЕЗ символу @ (потрібен для кнопки «Натякнути другу» та запрошень)
   BOT_USERNAME: 'vadrine_bot',
 
@@ -499,7 +539,7 @@ const PRIZES = [
    Фото: Unsplash або власні файли (напр. img: 'images/watch.jpg' — покладіть їх у папку images у репозиторії).
    Якщо фото не завантажиться — покажеться емодзі-заглушка. */
 const PRODUCTS = [
- { id: 'bracelet1', emoji: '💎', name: 'Vivienne Westwood Mayfair Bas Relief Bracelet', desc: 'Фірмовий дизайн orb, елегантний браслет', price: 549, img: 'https://vadrine02.github.io/tg-shop/images/bracelet1.jpg' },
+  { id: 'bracelet1', emoji: '💎', name: 'Vivienne Westwood Mayfair Bas Relief Bracelet', desc: 'Фірмовий дизайн orb, елегантний браслет', price: 549, img: 'https://vadrine02.github.io/tg-shop/images/bracelet1.jpg' },
   { id: 'necklace1', emoji: '✨', name: 'Vivienne Westwood Mayfair Large Orb Pendant Necklace', desc: 'Великий кулон orb на ланцюжку', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace1.jpg' },
   { id: 'necklace2', emoji: '🖤', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace чорний', desc: 'Міні-кулон orb, чорний колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace2.jpg' },
   { id: 'necklace3', emoji: '🩷', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace рожевий', desc: 'Міні-кулон orb, рожевий колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace3.jpg' },
@@ -597,7 +637,8 @@ async function api(path, body, opts) {
   try {
     let res;
     if (body === undefined) {
-      res = await fetch(`${SERVER.api}${path}?uid=${encodeURIComponent(SERVER.uid)}&sig=${encodeURIComponent(SERVER.sig)}`, { signal: ctl.signal });
+      const sep = path.includes('?') ? '&' : '?';
+      res = await fetch(`${SERVER.api}${path}${sep}uid=${encodeURIComponent(SERVER.uid)}&sig=${encodeURIComponent(SERVER.sig)}`, { signal: ctl.signal });
     } else {
       res = await fetch(SERVER.api + path, {
         method: 'POST',
@@ -863,24 +904,21 @@ function renderCatalog() {
   PRODUCTS.forEach((p) => {
     const card = document.createElement('article');
     card.className = 'card';
-    
-    // Перевіряємо, чи є для товару власне фото чи лише емодзі
-    const imgHTML = p.img 
-      ? `<img src="${p.img}" alt="${esc(p.name)}" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;">` 
-      : '';
-
     card.innerHTML = `
-      <div class="card-img">
-        ${imgHTML}
-        <span>${p.emoji}</span>
-      </div>
+      <div class="card-img"><span>${p.emoji}</span></div>
       <div class="card-body">
-        <div class="card-name">${esc(p.name)}</div>
-        <div class="card-desc">${esc(p.desc)}</div>
+        <div class="card-name">${p.name}</div>
+        <div class="card-desc">${p.desc}</div>
         <div class="card-price">${money(p.price)}</div>
         <button class="btn-add" data-id="${p.id}">В кошик</button>
         <button class="btn-hint" data-hint="${p.id}">Натякнути другу 🎁</button>
       </div>`;
+    const img = document.createElement('img');
+    img.alt = p.name;
+    img.decoding = 'async';
+    img.onerror = () => img.remove();            // не завантажилось — лишається емодзі-заглушка
+    card.querySelector('.card-img').appendChild(img);
+    img.src = p.img;
     grid.appendChild(card);
   });
 }
@@ -1017,6 +1055,46 @@ function renderPrizes() {
   $('prizeNote').textContent = `Бонус діє ${CONFIG.PROMO_HOURS} години. Новий виграш замінює попередній.`;
 }
 
+/* ----- Відстеження посилки Нової Пошти ----- */
+async function trackParcel(btn) {
+  const out = btn.closest('.oc-ttn').querySelector('.oc-track-result');
+  out.hidden = false;
+  out.innerHTML = '<div class="tr-meta">Перевіряємо статус…</div>';
+  btn.disabled = true;
+  try {
+    const d = await api('/api/track?ttn=' + encodeURIComponent(btn.dataset.ttn));
+    if (!d.ok) throw new Error(d.error || 'fail');
+    const place = [d.city, d.warehouse].filter(Boolean).join(', ');
+    const time = new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+    out.innerHTML = `<div class="${d.received ? 'tr-done' : ''}">
+      <div class="tr-status"><span>${esc(d.emoji)}</span><b>${esc(d.status)}</b></div>
+      ${d.np_status && d.np_status !== d.status ? `<div class="tr-meta">Нова Пошта: ${esc(d.np_status)}</div>` : ''}
+      ${place ? `<div class="tr-meta">📍 ${esc(place)}</div>` : ''}
+      ${d.delivery_date ? `<div class="tr-meta">${d.received ? 'Дата отримання' : 'Орієнтовна доставка'}: ${esc(d.delivery_date)}</div>` : ''}
+      <div class="tr-meta">Оновлено о ${esc(time)}</div>
+    </div>`;
+    btn.textContent = 'Оновити статус';
+  } catch (e) {
+    out.innerHTML = '<div class="tr-meta tr-error">Не вдалося отримати статус. Спробуйте трохи пізніше.</div>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ----- Кнопка Telegram-каналу ----- */
+const channelUrl = () => String(CONFIG.TELEGRAM_CHANNEL || '').trim();
+function initChannelButton() {
+  const url = channelUrl();
+  $('channelBtn').hidden = !url || /your_channel/i.test(url);   // поки не вказано свій канал — ховаємо
+}
+function openChannel() {
+  const url = channelUrl();
+  if (!url) return;
+  tap('light');
+  if (tg && tg.openTelegramLink && /^https?:\/\/t\.me\//i.test(url)) tg.openTelegramLink(url);   // офіційний метод Telegram
+  else window.open(url, '_blank');                                                                 // поза Telegram
+}
+
 /* ----- Мої замовлення (з сервера бота) ----- */
 const fmtDate = (ts) => new Date(ts * 1000).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -1030,6 +1108,10 @@ function renderOrders(list) {
     <article class="order-card">
       <div class="oc-head"><b>${esc(o.no)}</b><span>${esc(fmtDate(o.ts))}</span></div>
       <ul>${o.items.map((i) => `<li>${esc(i.name)} × ${Number(i.qty)}<span>${money(Number(i.sum))}</span></li>`).join('')}</ul>
+      ${o.ttn ? `<div class="oc-ttn">
+        <div class="oc-ttn-row"><span>📦 ТТН: <b>${esc(o.ttn)}</b></span><button class="oc-track-btn" data-ttn="${esc(o.ttn)}">Відстежити посилку</button></div>
+        <div class="oc-track-result" hidden></div>
+      </div>` : ''}
       ${o.promo ? `<div class="oc-promo">🎟 ${esc(o.promo)}</div>` : ''}
       <div class="oc-foot"><span>${esc(o.payment_short)}</span><b>${money(Number(o.total))}</b></div>
     </article>`).join('');
@@ -1389,6 +1471,11 @@ $('wfDone').addEventListener('click', () => {
 
 $('ordersBtn').addEventListener('click', () => { openSheet('ordersSheet'); loadOrders(); });
 $('prizesBtn').addEventListener('click', () => openSheet('prizesSheet'));
+$('channelBtn').addEventListener('click', openChannel);
+$('ordersBody').addEventListener('click', (e) => {
+  const btn = e.target.closest('.oc-track-btn');
+  if (btn) trackParcel(btn);
+});
 $('wfPrizesBtn').addEventListener('click', () => openSheet('prizesSheet', true));
 
 $('spinBtn').addEventListener('click', () => {
@@ -1448,6 +1535,7 @@ buildWheel($('wheel'));       // велике колесо (на весь екр
 buildWheel($('wheelMini'));   // мініатюра у картці
 renderCatalog();
 renderPrizes();
+initChannelButton();
 renderCartUI();
 
 if (serverMode) {
@@ -1459,6 +1547,11 @@ if (serverMode) {
 } else {
   loadState();
   updateBonusUI();
+}
+
+// Бот відкриває Mini App із повідомлення про відправку («Мої замовлення») — одразу показуємо історію
+if (QS.get('open') === 'orders') {
+  setTimeout(() => { openSheet('ordersSheet'); loadOrders(); }, 500);
 }
 </script>
 </body>
