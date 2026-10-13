@@ -105,6 +105,7 @@ NP_API_KEY = os.getenv("NP_API_KEY", "").strip()
 # Бізнес-налаштування (мають збігатися з index.html)
 # ----------------------------------------------------------------------
 CATALOG = {
+
     "bracelet1":  {"name": "Vivienne Westwood Mayfair Bas Relief Bracelet",  "price": 549},
     "necklace1": {"name": "Vivienne Westwood Mayfair Large Orb Pendant Necklace", "price": 399},
     "necklace2":    {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace чорний",   "price": 399},
@@ -129,7 +130,7 @@ CATALOG = {
     "clutch2":   {"name": "Zadig & Voltaire Rock Clutch Black",            "price": 1399},
     "clutch3":   {"name": "Zadig & Voltaire Rock Quilted Leather Clutch White",            "price": 1399},
     "clutch4":   {"name": "Zadig & Voltaire Rock Quilted Leather Clutch Black",            "price": 1399},
-    "clutch5":   {"name": "Zadig & Voltaire Rock Studs Clutch", 
+    "clutch5":   {"name": "Zadig & Voltaire Rock Studs Clutch",            "price": 1699},
 
 }
 
