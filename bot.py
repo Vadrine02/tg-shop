@@ -11,7 +11,6 @@ vadrine — серверна частина Telegram Mini App (aiogram 3 + SQLit
   • через 30 хвилин нагадує про покинутий кошик;
   • зберігає дані в хмарній базі Turso (або в локальному SQLite, якщо Turso не задано);
   • відстежує посилки Нової Пошти за ТТН: /setttn (адмін) + кнопка «Відстежити посилку» в Mini App;
-  • каталог товарів лежить у базі й змінюється командами /products, /toggleproduct, /setprice (без перезапуску);
   • показує історію замовлень: /myorders у чаті та вкладка «Мої замовлення» в Mini App;
   • приймає замовлення з Mini App (F.web_app_data), перераховує суму сам і
     шле красиве повідомлення адміну та подяку клієнту.
@@ -74,7 +73,7 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 
 # 3) ПОСИЛАННЯ НА ВАШ MINI APP НА GITHUB PAGES (HTTPS, без параметрів).
 #    Приклад: https://vadrine02.github.io/vadrine/
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://ВАШ_НІК.github.io/НАЗВА_РЕПОЗИТОРІЮ/")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "https://vadrine02.github.io/tg-shop/")
 
 # 4) Публічна адреса цього бота на Render, напр. https://vadrine-bot.onrender.com
 #    Render сам задає змінну RENDER_EXTERNAL_URL, тому зазвичай нічого вписувати не треба.
@@ -105,37 +104,35 @@ NP_API_KEY = os.getenv("NP_API_KEY", "").strip()
 # ----------------------------------------------------------------------
 # Бізнес-налаштування (мають збігатися з index.html)
 # ----------------------------------------------------------------------
-# Початковий каталог. Використовується ЛИШЕ один раз: коли таблиця products у базі порожня,
-# бот заповнює її цими товарами. Далі каталогом керуєте з чату: /products, /toggleproduct, /setprice.
-SEED_PRODUCTS = [
-    SEED_PRODUCTS = [
-    {"id": "bracelet1",  "name": "Vivienne Westwood Mayfair Bas Relief Bracelet", "price": 549, "emoji": "📿", "desc": "Фірмовий браслет Mayfair Bas Relief", "img": ""},
-    {"id": "necklace1",  "name": "Vivienne Westwood Mayfair Large Orb Pendant Necklace", "price": 399, "emoji": "💎", "desc": "Підвіска Large Orb", "img": ""},
-    {"id": "necklace2",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace чорний", "price": 399, "emoji": "💎", "desc": "Чорна підвіска Mini Bas Relief", "img": ""},
-    {"id": "necklace3",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace рожевий", "price": 399, "emoji": "💎", "desc": "Рожева підвіска Mini Bas Relief", "img": ""},
-    {"id": "necklace4",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace фіолетовий", "price": 399, "emoji": "💎", "desc": "Фіолетова підвіска Mini Bas Relief", "img": ""},
-    {"id": "necklace5",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace прозорий", "price": 399, "emoji": "💎", "desc": "Прозора підвіска Mini Bas Relief", "img": ""},
-    {"id": "necklace6",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace червоний", "price": 399, "emoji": "💎", "desc": "Червона підвіска Mini Bas Relief", "img": ""},
-    {"id": "necklace7",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace блакитний", "price": 399, "emoji": "💎", "desc": "Блакитна підвіска Mini Bas Relief", "img": ""},
-    {"id": "necklace8",  "name": "Кулон Vivienne Westwood", "price": 299, "emoji": "💎", "desc": "Кулон Vivienne Westwood", "img": ""},
-    {"id": "necklace9",  "name": "Кулон скріпка Vivienne Westwood", "price": 299, "emoji": "📎", "desc": "Кулон-скріпка Vivienne Westwood", "img": ""},
-    {"id": "bracelet2",  "name": "Vivienne Westwood Lucrece Safety Pin Orb Bracelet", "price": 449, "emoji": "📿", "desc": "Браслет Lucrece Safety Pin Orb", "img": ""},
-    {"id": "necklace10", "name": "Vivienne Westwood Bat Wing Orb Necklace", "price": 399, "emoji": "🦇", "desc": "Підвіска Bat Wing Orb", "img": ""},
-    {"id": "earrings1",  "name": "Сережки Vivienne Westwood", "price": 299, "emoji": "✨", "desc": "Сережки Vivienne Westwood", "img": ""},
-    {"id": "necklace11", "name": "Vivienne Westwood Ornamental Small Orb Pendant Necklace чорний", "price": 449, "emoji": "💎", "desc": "Чорна підвіска Ornamental Small Orb", "img": ""},
-    {"id": "necklace12", "name": "Vivienne Westwood Ornamental Small Orb Pendant Necklace фіолетовий", "price": 449, "emoji": "💎", "desc": "Фіолетова підвіска Ornamental Small Orb", "img": ""},
-    {"id": "necklace13", "name": "Vivienne Westwood New Small Orb Pendant Necklace червоний", "price": 499, "emoji": "💎", "desc": "Червона підвіска New Small Orb", "img": ""},
-    {"id": "necklace14", "name": "Vivienne Westwood New Small Orb Pendant Necklace синій", "price": 499, "emoji": "💎", "desc": "Синя підвіска New Small Orb", "img": ""},
-    {"id": "necklace15", "name": "Vivienne Westwood New Small Orb Pendant Necklace чорний", "price": 499, "emoji": "💎", "desc": "Чорна підвіска New Small Orb", "img": ""},
-    {"id": "wallet1",    "name": "Vivienne Westwood Vintage Water Orb Tri-Fold Wallet", "price": 1299, "emoji": "👛", "desc": "Шкіряний гаманець Tri-Fold", "img": ""},
-    {"id": "necklace16", "name": "Pandora Sparkling Heart Collier Necklace", "price": 499, "emoji": "💖", "desc": "Кольє Pandora Sparkling Heart", "img": ""},
-    {"id": "clutch1",    "name": "Zadig & Voltaire Rock Clutch White", "price": 1399, "emoji": "👜", "desc": "Білий клатч Zadig & Voltaire Rock", "img": ""},
-    {"id": "clutch2",    "name": "Zadig & Voltaire Rock Clutch Black", "price": 1399, "emoji": "👜", "desc": "Чорний клатч Zadig & Voltaire Rock", "img": ""},
-    {"id": "clutch3",    "name": "Zadig & Voltaire Rock Quilted Leather Clutch White", "price": 1399, "emoji": "👜", "desc": "Стьобаний білий клатч Zadig & Voltaire", "img": ""},
-    {"id": "clutch4",    "name": "Zadig & Voltaire Rock Quilted Leather Clutch Black", "price": 1399, "emoji": "👜", "desc": "Стьобаний чорний клатч Zadig & Voltaire", "img": ""},
-    {"id": "clutch5",    "name": "Zadig & Voltaire Rock Studs Clutch", "price": 1699, "emoji": "👜", "desc": "Клатч Zadig & Voltaire із заклепками", "img": ""},
-]
-]
+CATALOG = {
+
+    "bracelet1":  {"name": "Vivienne Westwood Mayfair Bas Relief Bracelet",  "price": 549},
+    "necklace1": {"name": "Vivienne Westwood Mayfair Large Orb Pendant Necklace", "price": 399},
+    "necklace2":    {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace чорний",   "price": 399},
+    "necklace3":   {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace рожевий",            "price": 399},
+    "necklace4":   {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace фіолетовий",            "price": 399},
+    "necklace5":   {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace прозорий",            "price": 399},
+    "necklace6":   {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace червоний",            "price": 399},
+    "necklace7":   {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace блакитний",            "price": 399},
+    "necklace8":   {"name": "Кулон Vivienne Westwood ",            "price": 299},
+    "necklace9":   {"name": "Кулон скріпка Vivienne Westwood",            "price": 299},
+    "bracelet2":  {"name": "Vivienne Westwood Lucrece Safety Pin Orb Bracelet",  "price": 449},
+    "necklace10":   {"name": "Vivienne Westwood Bat Wing Orb Necklace ",            "price": 399},
+    "earrings1":   {"name": "Сережки Vivienne Westwood",            "price": 299},
+    "necklace11":   {"name": "Vivienne Westwood Ornamental Small Orb Pendant Necklace чорний",            "price": 449},
+    "necklace12":   {"name": "Vivienne Westwood Ornamental Small Orb Pendant Necklace фіолетовий",            "price": 449},
+    "necklace13":   {"name": "Vivienne Westwood New Small Orb Pendant Necklace червоний",            "price": 499},
+    "necklace14":   {"name": "Vivienne Westwood New Small Orb Pendant Necklace синій",            "price": 499},
+    "necklace15":   {"name": "Vivienne Westwood New Small Orb Pendant Necklace чорний",            "price": 499},
+    "wallet1":   {"name": "Vivienne Westwood Vintage Water Orb Tri-Fold Wallet",            "price": 1299},
+    "necklace16":   {"name": "Pandora Sparkling Heart Collier Necklace",            "price": 499},
+    "clutch1":   {"name": "Zadig & Voltaire Rock Clutch White",            "price": 1399},
+    "clutch2":   {"name": "Zadig & Voltaire Rock Clutch Black",            "price": 1399},
+    "clutch3":   {"name": "Zadig & Voltaire Rock Quilted Leather Clutch White",            "price": 1399},
+    "clutch4":   {"name": "Zadig & Voltaire Rock Quilted Leather Clutch Black",            "price": 1399},
+    "clutch5":   {"name": "Zadig & Voltaire Rock Studs Clutch",            "price": 1699},
+
+}
 
 # Призи колеса. weight = шанс у % (сума 100).
 PRIZES = {
@@ -226,25 +223,21 @@ def check_sig(user_id: int, sig: str) -> bool:
     return hmac.compare_digest(make_sig(user_id), str(sig or ""))
 
 
-def webapp_url_for(user_id: int) -> str:
-    """Посилання на Mini App з параметрами: хто користувач і куди слати запити."""
+def webapp_url_for(user_id: int, **extra: str) -> str:
+    """Посилання на Mini App з параметрами: хто користувач і куди слати запити.
+    extra — додаткові параметри, напр. open="orders" (одразу відкрити «Мої замовлення»)."""
     params = {"uid": user_id, "sig": make_sig(user_id)}
     if PUBLIC_URL:
         params["api"] = PUBLIC_URL
+    params.update(extra)
     sep = "&" if "?" in WEBAPP_URL else "?"
     return f"{WEBAPP_URL}{sep}{urlencode(params)}"
 
 
-# Текст ПОСТІЙНОЇ кнопки в чаті. Він однаковий у ВСІХ повідомленнях бота (привітання, замовлення,
-# нагадування, сповіщення про ТТН), тому кнопка завжди відкриває каталог магазину. НЕ змінюйте його
-# під окремі повідомлення — інакше кнопка в чаті «перефарбується» під останнє повідомлення.
-WEBAPP_BUTTON_TEXT = "🛍 Відкрити vadrine"
-
-
-def webapp_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+def webapp_keyboard(user_id: int, text: str = "🛍 Відкрити vadrine", **extra: str) -> ReplyKeyboardMarkup:
     # Саме KeyboardButton (а не Inline) — інакше sendData() не спрацює!
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=WEBAPP_BUTTON_TEXT, web_app=WebAppInfo(url=webapp_url_for(user_id)))]],
+        keyboard=[[KeyboardButton(text=text, web_app=WebAppInfo(url=webapp_url_for(user_id, **extra)))]],
         resize_keyboard=True,
         is_persistent=True,
     )
@@ -285,15 +278,6 @@ CREATE TABLE IF NOT EXISTS orders (
     payload    TEXT    NOT NULL,
     details    TEXT,
     ttn        TEXT
-);
-CREATE TABLE IF NOT EXISTS products (
-    id        TEXT PRIMARY KEY,
-    name      TEXT    NOT NULL,
-    price     INTEGER NOT NULL,
-    "desc"    TEXT    NOT NULL DEFAULT '',
-    img       TEXT    NOT NULL DEFAULT '',
-    emoji     TEXT    NOT NULL DEFAULT '🛍',
-    available INTEGER NOT NULL DEFAULT 1
 )
 """
 
@@ -302,11 +286,10 @@ USER_COLS = ("user_id", "first_name", "username", "spins_total", "spins_used", "
 PROMO_COLS = ("user_id", "code", "issued_at", "expires_at", "reminded")
 CART_COLS = ("user_id", "item_count", "updated_at")
 ORDER_COLS = ("id", "user_id", "created_at", "total", "promo_code", "payload", "details", "ttn")
-PRODUCT_COLS = ("id", "name", "price", "desc", "img", "emoji", "available")
 
 
 def _sel(cols: tuple) -> str:
-    return ", ".join(f'"{c}"' for c in cols)     # у лапках: "desc" — службове слово SQL
+    return ", ".join(cols)
 
 
 class Database:
@@ -341,9 +324,6 @@ class Database:
             except Exception:
                 self.conn.execute(f"ALTER TABLE orders ADD COLUMN {column} TEXT")
                 self.conn.commit()
-        added = self.seed_products(SEED_PRODUCTS)       # порожній каталог → наповнюємо початковими товарами
-        if added:
-            log.info("Каталог у базі був порожній — додано %s товари(ів) з SEED_PRODUCTS", added)
 
     def close(self) -> None:
         def _close() -> None:
@@ -462,8 +442,7 @@ class Database:
                              ("spins_total", "spins_used"))
             if user["spins_total"] - user["spins_used"] < 1:
                 return "no_attempts", None
-            self.conn.execute("UPDATE users SET spins_used=spins_used+1 WHERE user_id=? AND spins_total-spins_used>=1",
-                              (user_id,))   # подвійний захист: використаних ніколи не більше, ніж нараховано
+            self.conn.execute("UPDATE users SET spins_used=spins_used+1 WHERE user_id=?", (user_id,))
             self.conn.execute(
                 "INSERT OR REPLACE INTO promos(user_id, code, issued_at, expires_at, reminded) VALUES (?,?,?,?,0)",
                 (user_id, code, now, now + PROMO_TTL))
@@ -521,46 +500,6 @@ class Database:
             self.conn.execute("DELETE FROM promos WHERE user_id=?", (user_id,))
             self.conn.execute("DELETE FROM carts WHERE user_id=?", (user_id,))
             return int(order_id), now
-
-    # --- каталог товарів -------------------------------------------------
-    def seed_products(self, items: list[dict]) -> int:
-        """Наповнює каталог, лише якщо таблиця порожня. Повертає кількість доданих товарів."""
-        with self.tx():
-            if self.conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]:
-                return 0
-            for p in items:
-                self.conn.execute(
-                    'INSERT INTO products(id, name, price, "desc", img, emoji, available) VALUES (?,?,?,?,?,?,1)',
-                    (p["id"], p["name"], int(p["price"]), p.get("desc", ""), p.get("img", ""), p.get("emoji", "🛍")))
-            return len(items)
-
-    def list_products(self) -> list[dict]:
-        with self.lock:
-            return self._all(f"SELECT {_sel(PRODUCT_COLS)} FROM products ORDER BY rowid", (), PRODUCT_COLS)
-
-    def get_products_map(self) -> dict[str, dict]:
-        return {p["id"]: p for p in self.list_products()}
-
-    def get_product(self, product_id: str) -> dict | None:
-        with self.lock:
-            return self._one(f"SELECT {_sel(PRODUCT_COLS)} FROM products WHERE id=?", (product_id,), PRODUCT_COLS)
-
-    def toggle_product(self, product_id: str) -> bool | None:
-        """Перемикає наявність. Повертає нове значення (True — є в наявності) або None, якщо товару немає."""
-        with self.tx():
-            row = self._one("SELECT available FROM products WHERE id=?", (product_id,), ("available",))
-            if not row:
-                return None
-            new_value = 0 if row["available"] else 1
-            self.conn.execute("UPDATE products SET available=? WHERE id=?", (new_value, product_id))
-            return bool(new_value)
-
-    def set_price(self, product_id: str, price: int) -> bool:
-        with self.tx():
-            if not self.conn.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone():
-                return False
-            self.conn.execute("UPDATE products SET price=? WHERE id=?", (int(price), product_id))
-            return True
 
     def get_order(self, order_id: int) -> dict | None:
         with self.lock:
@@ -654,10 +593,11 @@ class Scheduler:
             text = (
                 f"{name}, ми помітили, що ви залишили товари у кошику. 🛍\n"
                 f"Нагадуємо, що ваш промокод <b>{esc(promo['code'])}</b> діє ще <b>{left}</b>!\n\n"
-                f"Щоб завершити замовлення, натисніть «{WEBAPP_BUTTON_TEXT}» внизу 👇"
+                "Завершити замовлення можна кнопкою внизу 👇"
             )
-            # Кнопка — у reply-клавіатурі (з незмінним текстом), щоб sendData() спрацював після відкриття
-            await self.bot.send_message(user_id, text, reply_markup=webapp_keyboard(user_id))
+            # Кнопка — у reply-клавіатурі, щоб sendData() спрацював після відкриття
+            await self.bot.send_message(user_id, text,
+                                        reply_markup=webapp_keyboard(user_id, "🛍 Завершити замовлення"))
             await dbrun(self.db.mark_reminded, user_id)
             log.info("Надіслано нагадування про кошик користувачу %s", user_id)
         except asyncio.CancelledError:
@@ -715,15 +655,7 @@ def clean_text(value: object, limit: int = 100) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
-class OutOfStockError(ValueError):
-    """У замовленні є товар, якого немає в наявності (available = 0) або якого немає в каталозі."""
-
-    def __init__(self, names: list[str]) -> None:
-        super().__init__("out of stock: " + ", ".join(names))
-        self.names = names
-
-
-def parse_order(raw: str, promo: str | None, products: dict[str, dict]) -> dict:
+def parse_order(raw: str, promo: str | None) -> dict:
     """Перевіряє JSON з Mini App. Ціни та промокод беруться ЗІ СВОГО боку (каталог і база),
     значення з JSON використовуються лише як довідкові."""
     try:
@@ -741,27 +673,19 @@ def parse_order(raw: str, promo: str | None, products: dict[str, dict]) -> dict:
     if not (name and city and branch and sum(c.isdigit() for c in phone) >= 10):
         raise ValueError("Не всі дані клієнта заповнені")
 
-    items, unavailable = [], []
+    items = []
     for entry in data.get("items") or []:
         if not isinstance(entry, dict):
             continue
+        product = CATALOG.get(str(entry.get("id")))
         try:
             qty = int(entry.get("q", 0))
         except (TypeError, ValueError):
             continue
-        if qty < 1:
-            continue
-        product = products.get(str(entry.get("id")))          # ціна й наявність — ЛИШЕ з бази
-        if not product:
-            unavailable.append("товар, якого вже немає в каталозі")
-        elif not product["available"]:
-            unavailable.append(product["name"])
-        else:
+        if product and qty >= 1:
             qty = min(qty, MAX_QTY)
             items.append({"name": product["name"], "price": product["price"], "qty": qty,
                           "sum": product["price"] * qty})
-    if unavailable:                                             # замовлення блокується повністю
-        raise OutOfStockError(list(dict.fromkeys(unavailable)))
     if not items:
         raise ValueError("Порожній кошик")
 
@@ -776,7 +700,7 @@ def parse_order(raw: str, promo: str | None, products: dict[str, dict]) -> dict:
     }
 
 
-def order_view(row: dict, products: dict | None = None) -> dict:
+def order_view(row: dict) -> dict:
     """Замовлення з БД → зручний для Mini App / чату вигляд."""
     details = None
     if row.get("details"):
@@ -793,7 +717,7 @@ def order_view(row: dict, products: dict | None = None) -> dict:
         try:
             data = json.loads(row["payload"])
             for entry in data.get("items", []):
-                product = (products or {}).get(str(entry.get("id")))
+                product = CATALOG.get(str(entry.get("id")))
                 qty = max(1, min(int(entry.get("q", 1)), MAX_QTY))
                 if product:
                     items.append({"name": product["name"], "qty": qty, "sum": product["price"] * qty})
@@ -1095,13 +1019,12 @@ async def cmd_give(message: Message, command: CommandObject, bot: Bot, db: Datab
 async def cmd_myorders(message: Message, db: Database) -> None:
     """Користувач дивиться свої останні замовлення прямо в чаті."""
     rows = await dbrun(db.get_user_orders, message.from_user.id, 5)
-    products = await dbrun(db.get_products_map)
     if not rows:
         await message.answer("🧾 У вас поки немає замовлень.\nВідкрийте магазин кнопкою внизу — і оформіть перше!")
         return
     blocks = []
     for row in rows:
-        o = order_view(row, products)
+        o = order_view(row)
         items = "\n".join(f"• {esc(i['name'])} × {i['qty']}" for i in o["items"]) or "• —"
         promo = f"\n🎟 {esc(o['promo'])}" if o["promo"] else ""
         ttn = f"\n📦 ТТН: <code>{esc(o['ttn'])}</code>" if o.get("ttn") else ""
@@ -1147,64 +1070,12 @@ async def cmd_setttn(message: Message, command: CommandObject, bot: Bot, db: Dat
         await bot.send_message(
             order["user_id"],
             f"{head}\nТТН: <code>{ttn}</code>\n"
-            "Відстежуйте статус у розділі «Мої замовлення»: відкрийте магазин кнопкою внизу "
-            "й натисніть іконку чека.",
-            reply_markup=webapp_keyboard(order["user_id"]))
+            "Відстежуйте статус у розділі «Мої замовлення».",
+            reply_markup=webapp_keyboard(order["user_id"], "📦 Мої замовлення", open="orders"))
         report += "\nКлієнту надіслано сповіщення."
     except TelegramAPIError:
         report += "\n⚠️ Сповістити клієнта не вдалося (можливо, він заблокував бота), але ТТН збережено."
     await message.answer(report)
-
-
-def product_line(p: dict) -> str:
-    mark = "✅" if p["available"] else "❌"
-    return f"{mark} <code>{esc(p['id'])}</code> — {esc(p['name'])} — {money(p['price'])}"
-
-
-@router.message(Command("products"), F.from_user.id == ADMIN_ID)
-async def cmd_products(message: Message, db: Database) -> None:
-    """Адмін бачить каталог з id товарів (вони потрібні для наступних команд)."""
-    items = await dbrun(db.list_products)
-    if not items:
-        await message.answer("Каталог порожній.")
-        return
-    await message.answer(
-        "🛍 <b>Каталог</b>\n" + "\n".join(product_line(p) for p in items) + "\n\n"
-        "✅ є в наявності · ❌ немає\n"
-        "<code>/toggleproduct id</code> — змінити наявність\n"
-        "<code>/setprice id ціна</code> — змінити ціну")
-
-
-@router.message(Command("toggleproduct"), F.from_user.id == ADMIN_ID)
-async def cmd_toggleproduct(message: Message, command: CommandObject, db: Database) -> None:
-    """Вмикає/вимикає наявність товару:  /toggleproduct <id>"""
-    parts = (command.args or "").split()
-    if len(parts) != 1:
-        await message.answer("Використання: <code>/toggleproduct id</code>\nСписок id: /products")
-        return
-    state = await dbrun(db.toggle_product, parts[0])
-    if state is None:
-        await message.answer("Товар не знайдено. Список id: /products")
-        return
-    product = await dbrun(db.get_product, parts[0])
-    await message.answer(
-        f"{'✅ Тепер є в наявності' if state else '❌ Тепер немає в наявності'}: <b>{esc(product['name'])}</b>\n"
-        "У Mini App зміна з'явиться за хвилину (або після повторного відкриття).")
-
-
-@router.message(Command("setprice"), F.from_user.id == ADMIN_ID)
-async def cmd_setprice(message: Message, command: CommandObject, db: Database) -> None:
-    """Змінює ціну товару:  /setprice <id> <ціна>"""
-    parts = (command.args or "").split()
-    if len(parts) != 2 or not re.fullmatch(r"\d{1,7}", parts[1]) or int(parts[1]) < 1:
-        await message.answer("Використання: <code>/setprice id ціна</code>, напр. <code>/setprice bag 2590</code>")
-        return
-    if not await dbrun(db.set_price, parts[0], int(parts[1])):
-        await message.answer("Товар не знайдено. Список id: /products")
-        return
-    product = await dbrun(db.get_product, parts[0])
-    await message.answer(f"✅ Ціну змінено: <b>{esc(product['name'])}</b> — {money(product['price'])}\n"
-                         "Нові замовлення рахуються за новою ціною одразу.")
 
 
 @router.message(Command("giveall"), F.from_user.id == ADMIN_ID)
@@ -1263,18 +1134,8 @@ async def on_web_app_data(message: Message, bot: Bot, db: Database, scheduler: S
     promo_row = await dbrun(db.get_active_promo, user.id)
     promo = promo_row["code"] if promo_row else None
 
-    products = await dbrun(db.get_products_map)          # актуальні ціни й наявність із бази
     try:
-        order = parse_order(message.web_app_data.data, promo, products)
-    except OutOfStockError as exc:
-        # Замовлення НЕ оформлюється, промокод і спроби лишаються недоторканими
-        names = ", ".join(esc(n) for n in exc.names)
-        log.info("Замовлення від %s заблоковано, немає в наявності: %s", user.id, ", ".join(exc.names))
-        await message.answer(
-            f"😕 На жаль, зараз немає в наявності: <b>{names}</b>.\n"
-            "Відкрийте магазин, зберіть кошик без цього товару й оформіть замовлення ще раз.",
-            reply_markup=webapp_keyboard(user.id))
-        return
+        order = parse_order(message.web_app_data.data, promo)
     except ValueError as exc:
         log.warning("Невалідне замовлення від %s: %s", user.id, exc)
         await message.answer("😕 Не вдалося обробити замовлення. Відкрийте магазин і спробуйте ще раз.")
@@ -1396,8 +1257,7 @@ async def api_orders(request: web.Request) -> web.Response:
     db: Database = request.app["db"]
     uid = auth_user(request.query.get("uid"), request.query.get("sig"))
     rows = await dbrun(db.get_user_orders, uid, 20)
-    products = await dbrun(db.get_products_map)
-    return web.json_response({"ok": True, "orders": [order_view(r, products) for r in rows]})
+    return web.json_response({"ok": True, "orders": [order_view(r) for r in rows]})
 
 
 async def api_track(request: web.Request) -> web.Response:
@@ -1410,14 +1270,6 @@ async def api_track(request: web.Request) -> web.Response:
     if not await dbrun(db.user_has_ttn, uid, ttn):
         return web.json_response({"ok": False, "error": "unknown_ttn"}, status=404)
     return web.json_response(await np_track(ttn))
-
-
-async def api_products(request: web.Request) -> web.Response:
-    """Публічний каталог для Mini App: актуальні товари, ціни й наявність прямо з бази."""
-    db: Database = request.app["db"]
-    items = await dbrun(db.list_products)
-    products = [{**p, "available": bool(p["available"])} for p in items]
-    return web.json_response({"ok": True, "products": products}, headers={"Cache-Control": "no-store"})
 
 
 async def api_cart(request: web.Request) -> web.Response:
@@ -1448,7 +1300,6 @@ async def start_http_server(db: Database, scheduler: Scheduler) -> web.AppRunner
     app.router.add_get("/api/state", api_state)
     app.router.add_get("/api/orders", api_orders)
     app.router.add_get("/api/track", api_track)
-    app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/spin", api_spin)
     app.router.add_post("/api/cart", api_cart)
     runner = web.AppRunner(app)
