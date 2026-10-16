@@ -298,6 +298,22 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outl
 .tab-link svg { color: var(--gold); }        /* вкладка «Канал» — зовнішнє посилання, тому іконка золота */
 .tab-link:active { color: var(--gold-2); }
 
+/* ---------- Каталог із бази: «немає в наявності» і завантаження ---------- */
+.card.soldout .card-img img { filter: grayscale(1) brightness(.4); }
+.card.soldout .card-img > span:first-child { opacity: .35; }
+.card.soldout .card-name, .card.soldout .card-price { opacity: .55; }
+.soldout-badge { position: absolute; z-index: 2; left: 10px; right: 10px; top: 50%; transform: translateY(-50%); padding: 8px 10px; border-radius: 10px; text-align: center; font-size: 12.5px; font-weight: 800; color: var(--text); background: rgba(10, 10, 12, .8); border: 1px solid rgba(255, 255, 255, .18); }
+.btn-add:disabled { background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); cursor: not-allowed; }
+.btn-add:disabled:active { transform: none; }
+.card.skeleton .card-img { font-size: 0; background: linear-gradient(100deg, var(--surface-2) 30%, #26262d 50%, var(--surface-2) 70%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+.sk-line { height: 12px; margin: 8px 0; border-radius: 6px; background: var(--surface-2); animation: pulse 1.4s ease-in-out infinite; }
+.sk-line.short { width: 60%; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@keyframes pulse { 50% { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) { .card.skeleton .card-img, .sk-line { animation: none !important; } }
+.catalog-msg { grid-column: 1 / -1; text-align: center; padding: 36px 12px; color: var(--muted); line-height: 1.5; }
+.catalog-msg .btn-ghost { max-width: 260px; margin: 12px auto 0; }
+
 .toast { position: fixed; z-index: 60; left: 50%; bottom: calc(var(--nav-h) + var(--safe-bottom) + 16px); transform: translate(-50%, 20px); max-width: 90vw; background: var(--text); color: var(--bg); padding: 11px 18px; border-radius: 12px; font-weight: 700; font-size: 13.5px; text-align: center; opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
@@ -500,7 +516,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outl
 const CONFIG = {
   // Посилання на ВАШ Telegram-канал — вкладка «Канал» у нижньому меню.
   // Замініть your_channel на назву вашого каналу, напр. https://t.me/vadrine_shop
-  TELEGRAM_CHANNEL: 'https://t.me/+sEZIWRqJopllYjQ6',
+  TELEGRAM_CHANNEL: 'https://t.me/your_channel',
 
   // ВСТАВТЕ username вашого бота БЕЗ символу @ (потрібен для кнопки «Натякнути другу» та запрошень)
   BOT_USERNAME: 'vadrine_bot',
@@ -521,36 +537,10 @@ const PRIZES = [
   { code: 'WESTWOOD',    weight: 5,  emoji: '💎', label: 'VW',    title: 'Прикраса Vivienne Westwood',  desc: 'у подарунок, на ваш вибір',  bg: '#9a6b4b', fg: '#fff6ea' }
 ];
 
-/* Товари. id та price мають збігатися з каталогом у bot.py.
-   Фото: Unsplash або власні файли (напр. img: 'images/watch.jpg' — покладіть їх у папку images у репозиторії).
-   Якщо фото не завантажиться — покажеться емодзі-заглушка. */
-const PRODUCTS = [
-   { id: 'bracelet1', emoji: '💎', name: 'Vivienne Westwood Mayfair Bas Relief Bracelet', desc: 'Фірмовий дизайн orb, елегантний браслет', price: 549, img: 'https://vadrine02.github.io/tg-shop/images/bracelet1.jpg' },
-  { id: 'necklace1', emoji: '✨', name: 'Vivienne Westwood Mayfair Large Orb Pendant Necklace', desc: 'Великий кулон orb на ланцюжку', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace1.jpg' },
-  { id: 'necklace2', emoji: '🖤', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace чорний', desc: 'Міні-кулон orb, чорний колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace2.jpg' },
-  { id: 'necklace3', emoji: '🩷', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace рожевий', desc: 'Міні-кулон orb, рожевий колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace3.jpg' },
-  { id: 'necklace4', emoji: '💜', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace фіолетовий', desc: 'Міні-кулон orb, фіолетовий колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace4.jpg' },
-  { id: 'necklace5', emoji: '💎', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace прозорий', desc: 'Міні-кулон orb, прозорий кришталь', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace5.jpg' },
-  { id: 'necklace6', emoji: '❤️', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace червоний', desc: 'Міні-кулон orb, червоний колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace6.jpg' },
-  { id: 'necklace7', emoji: '🩵', name: 'Vivienne Westwood Mini Bas Relief Pendant Necklace блакитний', desc: 'Міні-кулон orb, блакитний колір', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace7.jpg' },
-  { id: 'necklace8', emoji: '✨', name: 'Кулон Vivienne Westwood', desc: 'Класичний стильний кулон', price: 299, img: 'https://vadrine02.github.io/tg-shop/images/necklace8.jpg' },
-  { id: 'necklace9', emoji: '📎', name: 'Кулон скріпка Vivienne Westwood', desc: 'Дизайнерський кулон у формі скріпки', price: 299, img: 'https://vadrine02.github.io/tg-shop/images/necklace9.jpg' },
-  { id: 'bracelet2', emoji: '💫', name: 'Vivienne Westwood Lucrece Safety Pin Orb Bracelet', desc: 'Браслет із булавочкою та орбом', price: 449, img: 'https://vadrine02.github.io/tg-shop/images/bracelet2.jpg' },
-  { id: 'necklace10', emoji: '🦇', name: 'Vivienne Westwood Bat Wing Orb Necklace', desc: 'Кулон orb з крилами кажана', price: 399, img: 'https://vadrine02.github.io/tg-shop/images/necklace10.jpg' },
-  { id: 'earrings1', emoji: '✨', name: 'Сережки Vivienne Westwood', desc: 'Фірмові сережки з брендовим символом', price: 299, img: 'https://vadrine02.github.io/tg-shop/images/earrings1.jpg' },
-  { id: 'necklace11', emoji: '🖤', name: 'Vivienne Westwood Ornamental Small Orb Pendant Necklace чорний', desc: 'Малий орнаментальний кулон, чорний', price: 449, img: 'https://vadrine02.github.io/tg-shop/images/necklace11.jpg' },
-  { id: 'necklace12', emoji: '💜', name: 'Vivienne Westwood Ornamental Small Orb Pendant Necklace фіолетовий', desc: 'Малий орнаментальний кулон, фіолетовий', price: 449, img: 'https://vadrine02.github.io/tg-shop/images/necklace12.jpg' },
-  { id: 'necklace13', emoji: '❤️', name: 'Vivienne Westwood New Small Orb Pendant Necklace червоний', desc: 'Новий малий кулон orb, червоний', price: 499, img: 'https://vadrine02.github.io/tg-shop/images/necklace13.jpg' },
-  { id: 'necklace14', emoji: '💙', name: 'Vivienne Westwood New Small Orb Pendant Necklace синій', desc: 'Новий малий кулон orb, синій', price: 499, img: 'https://vadrine02.github.io/tg-shop/images/necklace14.jpg' },
-  { id: 'necklace15', emoji: '🖤', name: 'Vivienne Westwood New Small Orb Pendant Necklace чорний', desc: 'Новий малий кулон orb, чорний', price: 499, img: 'https://vadrine02.github.io/tg-shop/images/necklace15.jpg' },
-  { id: 'wallet1', emoji: '👛', name: 'Vivienne Westwood Vintage Water Orb Tri-Fold Wallet', desc: 'Стильний трискладний гаманець з принтом', price: 1299, img: 'https://vadrine02.github.io/tg-shop/images/wallet1.jpg' },
-  { id: 'necklace16', emoji: '💖', name: 'Pandora Sparkling Heart Collier Necklace', desc: 'Блискуче серце на шию, класика Pandora', price: 499, img: 'https://vadrine02.github.io/tg-shop/images/necklace16.jpg' },
-  { id: 'clutch1', emoji: '👜', name: 'Zadig & Voltaire Rock Clutch White', desc: 'Шкіряний клатч Rock, білий', price: 1399, img: 'https://vadrine02.github.io/tg-shop/images/clutch1.jpg' },
-  { id: 'clutch2', emoji: '🖤', name: 'Zadig & Voltaire Rock Clutch Black', desc: 'Шкіряний клатч Rock, чорний', price: 1399, img: 'https://vadrine02.github.io/tg-shop/images/clutch2.jpg' },
-  { id: 'clutch3', emoji: '🤍', name: 'Zadig & Voltaire Rock Quilted Leather Clutch White', desc: 'стьобаний шкіряний клатч, білий', price: 1399, img: 'https://vadrine02.github.io/tg-shop/images/clutch3.jpg' },
-  { id: 'clutch4', emoji: '🖤', name: 'Zadig & Voltaire Rock Quilted Leather Clutch Black', desc: 'Стьобаний шкіряний клатч, чорний', price: 1399, img: 'https://vadrine02.github.io/tg-shop/images/clutch4.jpg' },
-  { id: 'clutch5', emoji: '✨', name: 'Zadig & Voltaire Rock Studs Clutch', desc: 'Клатч з фірмовими заклёпками Rock Studs', price: 1699, img: 'https://vadrine02.github.io/tg-shop/images/clutch5.jpg' }
-];
+/* Каталог НЕ зберігається в коді. Товари, ціни й наявність приходять із бази бота:
+   GET {api}/api/products (див. refreshCatalog). Керування — командами бота: /products, /toggleproduct, /setprice.
+   Фото — поле img у базі (посилання на зображення). */
+let PRODUCTS = [];
 
 /* ================================================================
    ДОПОМІЖНЕ
@@ -615,6 +605,9 @@ const QS = new URLSearchParams(location.search);
 const SERVER = (QS.get('uid') && QS.get('sig') && QS.get('api'))
   ? { uid: QS.get('uid'), sig: QS.get('sig'), api: QS.get('api').replace(/\/+$/, '') } : null;
 let serverMode = !!SERVER;
+let syncFailed = false;        // не вдалося отримати спроби з сервера → колесо заблоковане
+// До відповіді сервера спроб НЕМАЄ: жодних «початкових» значень на клієнті (local-режим — лише для перегляду в браузері).
+if (SERVER) state.max = 0;
 
 async function api(path, body, opts) {
   opts = opts || {};
@@ -650,6 +643,19 @@ function applyServerState(d) {
 }
 const syncFromServer = async () => applyServerState(await api('/api/state', undefined, { timeout: 50000 })); // 50 с: Render може «прокидатися»
 
+async function retrySync() {            // кнопка «Спробувати ще раз», коли сервер був недоступний
+  $('spinBtn').disabled = true;
+  try {
+    await syncFromServer();
+    syncFailed = false;
+    lastReported = -1; flushCart();
+  } catch (e) {
+    toast('Сервер поки недоступний. Спробуйте за хвилину');
+  } finally {
+    updateBonusUI(); renderCartUI();
+  }
+}
+
 /* Кошик → сервер (для нагадування через 30 хв, якщо користувач пішов, не оформивши замовлення) */
 let cartTimer = null, lastReported = -1;
 const cartCount = () => Object.values(cart).reduce((sum, q) => sum + q, 0);
@@ -670,7 +676,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.addEventListener('pagehide', flushCart);
 
 function loadState() {
-  if (serverMode) return;   // у серверному режимі стан приходить із бота
+  if (serverMode) return;   // у серверному режимі стан приходить ЛИШЕ з бота. Локальні спроби — тільки для перегляду дизайну в браузері
   try { Object.assign(state, JSON.parse(store.get(STATE_KEY) || '{}')); } catch (e) {}
   const fromUrl = parseInt(new URLSearchParams(location.search).get('spins'), 10);
   state.max = Math.max(state.max || 0, CONFIG.DEFAULT_SPINS, isNaN(fromUrl) ? 0 : fromUrl);
@@ -850,6 +856,17 @@ function updateBonusUI() {
   const left = attemptsLeft();
   const card = $('wheelCard');
 
+  if (syncFailed) {                      // спроби підтвердити неможливо → колесо заблоковане, жодних локальних спроб
+    $('promoBanner').hidden = true;
+    card.classList.remove('collapsed');
+    $('miniWheel').classList.add('gone');
+    $('wcText').innerHTML = 'Не вдалося перевірити кількість спроб — немає зв’язку із сервером.';
+    $('spinBtn').textContent = 'Спробувати ще раз';
+    $('spinBtn').dataset.mode = 'retry';
+    $('spinBtn').disabled = false;
+    return;
+  }
+
   $('promoBanner').hidden = !p;
   if (p) {
     $('pbIcon').textContent = p.emoji;
@@ -884,32 +901,125 @@ function updateBonusUI() {
    ================================================================ */
 const cart = {}; // { productId: qty }
 
+const CATALOG_KEY = 'vad_catalog_v1';     // кеш лише для швидкого показу; актуальні дані завжди з сервера
+let catalogSig = '', catalogLoadedAt = 0, catalogBusy = false;
+
+function normalizeProducts(list) {
+  return (Array.isArray(list) ? list : []).map((p) => ({
+    id: String(p.id), name: String(p.name || ''), desc: String(p.desc || ''), price: Number(p.price) || 0,
+    img: String(p.img || ''), emoji: String(p.emoji || '🛍'), available: p.available !== false && p.available !== 0
+  })).filter((p) => p.id && p.name);
+}
+
 function renderCatalog() {
   const grid = $('grid');
   grid.innerHTML = '';
+  if (!PRODUCTS.length) {
+    grid.innerHTML = '<div class="catalog-msg">Скоро тут з’являться нові товари.</div>';
+    return;
+  }
   PRODUCTS.forEach((p) => {
     const card = document.createElement('article');
-    card.className = 'card';
+    card.className = 'card' + (p.available ? '' : ' soldout');
     card.innerHTML = `
-      <div class="card-img"><span>${p.emoji}</span></div>
+      <div class="card-img"><span>${esc(p.emoji)}</span>${p.available ? '' : '<span class="soldout-badge">Немає в наявності</span>'}</div>
       <div class="card-body">
-        <div class="card-name">${p.name}</div>
-        <div class="card-desc">${p.desc}</div>
+        <div class="card-name">${esc(p.name)}</div>
+        <div class="card-desc">${esc(p.desc)}</div>
         <div class="card-price">${money(p.price)}</div>
-        <button class="btn-add" data-id="${p.id}">В кошик</button>
-        <button class="btn-hint" data-hint="${p.id}">Натякнути другу 🎁</button>
+        ${p.available
+          ? `<button class="btn-add" data-id="${esc(p.id)}">В кошик</button>
+             <button class="btn-hint" data-hint="${esc(p.id)}">Натякнути другу 🎁</button>`
+          : '<button class="btn-add" disabled>Немає в наявності</button>'}
       </div>`;
-    const img = document.createElement('img');
-    img.alt = p.name;
-    img.decoding = 'async';
-    img.onerror = () => img.remove();            // не завантажилось — лишається емодзі-заглушка
-    card.querySelector('.card-img').appendChild(img);
-    img.src = p.img;
+    if (p.img) {
+      const img = document.createElement('img');
+      img.alt = p.name;
+      img.decoding = 'async';
+      img.onerror = () => img.remove();            // не завантажилось — лишається емодзі-заглушка
+      card.querySelector('.card-img').appendChild(img);
+      img.src = p.img;
+    }
     grid.appendChild(card);
   });
 }
 
+function renderSkeleton() {
+  $('grid').innerHTML = Array.from({ length: 4 }, () =>
+    '<article class="card skeleton"><div class="card-img"></div><div class="card-body"><div class="sk-line"></div><div class="sk-line short"></div><div class="sk-line"></div></div></article>').join('');
+}
+
+function showCatalogError(text, canRetry) {
+  $('grid').innerHTML = `<div class="catalog-msg"><p>${esc(text)}</p>${canRetry ? '<button class="btn-ghost" id="catalogRetry">Спробувати ще раз</button>' : ''}</div>`;
+  if (canRetry) $('catalogRetry').addEventListener('click', () => { renderSkeleton(); refreshCatalog(); });
+}
+
+async function fetchProducts() {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 50000);   // 50 с: безкоштовний Render може «прокидатися»
+  try {
+    const res = await fetch(`${SERVER.api}/api/products`, { cache: 'no-store', signal: ctl.signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    if (!d.ok || !Array.isArray(d.products)) throw new Error('bad response');
+    return d.products;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function applyCatalog(list) {
+  const next = normalizeProducts(list);
+  const sig = JSON.stringify(next);
+  const changed = sig !== catalogSig;
+  PRODUCTS = next;
+  catalogSig = sig;
+  // Товари, яких більше немає в наявності, прибираємо з кошика (інакше сума й замовлення були б хибними)
+  const gone = [];
+  for (const id of Object.keys(cart)) {
+    const prod = PRODUCTS.find((x) => x.id === id);
+    if (!prod || !prod.available) { gone.push(prod ? prod.name : 'товар'); delete cart[id]; }
+  }
+  if (changed) renderCatalog();
+  renderCartUI();
+  if (gone.length) { toast('Закінчились і прибрані з кошика: ' + gone.join(', ')); reportCart(); }
+}
+
+async function refreshCatalog() {
+  if (catalogBusy) return;
+  if (!SERVER) {                                  // сторінку відкрито не з бота — каталогу взяти ніде
+    if (!PRODUCTS.length) showCatalogError('Відкрийте магазин кнопкою в боті, щоб побачити каталог.', false);
+    return;
+  }
+  catalogBusy = true;
+  try {
+    const list = await fetchProducts();
+    store.set(CATALOG_KEY, JSON.stringify(list));
+    catalogLoadedAt = Date.now();
+    applyCatalog(list);
+  } catch (e) {
+    if (!PRODUCTS.length) showCatalogError('Не вдалося завантажити каталог.', true);
+  } finally {
+    catalogBusy = false;
+  }
+}
+
+function initCatalog() {
+  let cached = [];
+  try { cached = normalizeProducts(JSON.parse(store.get(CATALOG_KEY) || '[]')); } catch (e) {}
+  if (cached.length) {                            // миттєво показуємо попередній каталог, поки йде оновлення
+    PRODUCTS = cached;
+    catalogSig = JSON.stringify(cached);
+    renderCatalog();
+  } else {
+    renderSkeleton();
+  }
+  refreshCatalog();
+}
+
 function addToCart(id, btn) {
+  const prod = PRODUCTS.find((x) => x.id === id);
+  if (!prod || !prod.available) { toast('Цього товару немає в наявності'); return; }
   cart[id] = Math.min((cart[id] || 0) + 1, 20);
   tap('light');
   renderCartUI(true);
@@ -993,12 +1103,12 @@ function renderCartUI(bump) {
     $('cartSummary').innerHTML = '';
     $('checkoutBtn').style.display = 'none';
   } else {
-    list.innerHTML = Object.keys(cart).map((id) => {
+    list.innerHTML = Object.keys(cart).filter((id) => PRODUCTS.some((x) => x.id === id)).map((id) => {
       const p = PRODUCTS.find((x) => x.id === id);
       return `
         <div class="cart-item">
-          <div class="thumb">${p.emoji}</div>
-          <div class="ci-info"><div class="ci-name">${p.name}</div><div class="ci-price">${money(p.price)}</div></div>
+          <div class="thumb">${esc(p.emoji)}</div>
+          <div class="ci-info"><div class="ci-name">${esc(p.name)}</div><div class="ci-price">${money(p.price)}</div></div>
           <div class="qty">
             <button data-minus="${id}" aria-label="Менше">−</button><span>${cart[id]}</span><button data-plus="${id}" aria-label="Більше">+</button>
           </div>
@@ -1464,7 +1574,9 @@ $('ordersBody').addEventListener('click', (e) => {
 $('wfPrizesBtn').addEventListener('click', () => openSheet('prizesSheet', true));
 
 $('spinBtn').addEventListener('click', () => {
-  if ($('spinBtn').dataset.mode === 'invite') shareLink('Заходь у vadrine — крутимо колесо та вигравай бонус на аксесуари 🎁');
+  const mode = $('spinBtn').dataset.mode;
+  if (mode === 'invite') shareLink('Заходь у vadrine — крутимо колесо та вигравай бонус на аксесуари 🎁');
+  else if (mode === 'retry') retrySync();
   else spin();
 });
 
@@ -1472,7 +1584,16 @@ $('backdrop').addEventListener('click', closeSheets);
 document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeSheets));
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheets(); });
 
-$('cartBtn').addEventListener('click', () => { renderCartUI(); openSheet('cartSheet'); });
+$('cartBtn').addEventListener('click', () => {
+  if (Date.now() - catalogLoadedAt > 20000) refreshCatalog();     // перед оформленням — свіжі ціни й наявність
+  renderCartUI(); openSheet('cartSheet');
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && Date.now() - catalogLoadedAt > 20000) refreshCatalog();
+});
+setInterval(() => {
+  if (document.visibilityState === 'visible' && SERVER && Date.now() - catalogLoadedAt > 55000) refreshCatalog();
+}, 15000);
 $('checkoutBtn').addEventListener('click', () => { renderCartUI(); openSheet('checkoutSheet'); });
 $('sendBtn').addEventListener('click', submitOrder);
 $('orderForm').addEventListener('submit', (e) => { e.preventDefault(); submitOrder(); });
@@ -1483,7 +1604,7 @@ $('grid').addEventListener('click', (e) => {
   if (add) addToCart(add.dataset.id, add);
   if (hint) {
     const p = PRODUCTS.find((x) => x.id === hint.dataset.hint);
-    shareLink(`Мені б дуже хотілося: ${p.name} — ${money(p.price)} 🎁 vadrine`);
+    if (p) shareLink(`Мені б дуже хотілося: ${p.name} — ${money(p.price)} 🎁 vadrine`);
   }
 });
 $('cartList').addEventListener('click', (e) => {
@@ -1514,11 +1635,11 @@ document.querySelectorAll('#orderForm input[type="text"], #orderForm input[type=
 /* ================================================================
    СТАРТ
    ================================================================ */
-if (new URLSearchParams(location.search).get('reset') === '1') { store.del(STATE_KEY); store.del('vad_best'); }
+if (!SERVER && QS.get('reset') === '1') { store.del(STATE_KEY); store.del('vad_best'); }   // скидання — лише в режимі перегляду
 
 buildWheel($('wheel'));       // велике колесо (на весь екран)
 buildWheel($('wheelMini'));   // мініатюра у картці
-renderCatalog();
+initCatalog();
 renderPrizes();
 renderCartUI();
 
@@ -1526,7 +1647,7 @@ if (serverMode) {
   $('wheelCard').classList.add('collapsed');   // поки не отримали стан із сервера
   syncFromServer()
     .then(() => { lastReported = -1; flushCart(); })   // кошик порожній при відкритті → скидаємо старе нагадування
-    .catch(() => { serverMode = false; toast('Сервер недоступний — працює локальний режим'); loadState(); })
+    .catch(() => { syncFailed = true; })        // без сервера спроби НЕ відновлюються: колесо блокується до успішної перевірки
     .finally(() => { updateBonusUI(); renderCartUI(); });
 } else {
   loadState();
