@@ -905,7 +905,7 @@ async def cmd_setttn(message: Message, command: CommandObject, bot: Bot, db: Dat
             order["user_id"],
             f"{head}\nТТН: <code>{ttn}</code>\n"
             "Відстежуйте статус у розділі «Мої замовлення».",
-            reply_markup=webapp_keyboard(order["user_id"], "📦 Мої замовлення", open="orders"))
+            reply_markup=webapp_keyboard(order["user_id"], "🛍 Відкрити vadrine", open="catalog_keyboard"))
         report += "\nКлієнту надіслано сповіщення."
     except TelegramAPIError:
         report += "\n⚠️ Сповістити клієнта не вдалося (можливо, він заблокував бота), але ТТН збережено."
