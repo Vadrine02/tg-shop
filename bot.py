@@ -52,7 +52,7 @@ NP_API_KEY = os.getenv("NP_API_KEY", "").strip()
 CATALOG = {
     "bracelet1":  {"name": "Vivienne Westwood Mayfair Bas Relief Bracelet", "price": 549, "available": True},
     "necklace1": {"name": "Vivienne Westwood Mayfair Large Orb Pendant Necklace", "price": 399, "available": True},
-    "necklace2": {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace чорний", "price": 399, "available": False},  # Немає в наявності
+    "necklace2": {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace чорний", "price": 399, "available": True},  # Немає в наявності
     "necklace3": {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace рожевий", "price": 399, "available": True},
     "necklace4": {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace фіолетовий", "price": 399, "available": True},
     "necklace5": {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace прозорий", "price": 399, "available": True},
