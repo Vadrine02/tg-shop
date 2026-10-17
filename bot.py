@@ -214,7 +214,7 @@ class Database:
 
     def _connect(self) -> None:
         if self.remote:
-            import libsql_experimental as libsql
+            import libsql
             self.conn = libsql.connect(TURSO_URL, auth_token=TURSO_TOKEN)
         else:
             folder = os.path.dirname(os.path.abspath(self.path))
