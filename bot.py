@@ -36,8 +36,8 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://vadrine02.github.io/tg-shop/")
 PUBLIC_URL = (os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").rstrip("/")
 
-TURSO_URL = os.getenv("TURSO_DATABASE_URL", "").strip()
-TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "").strip()
+TURSO_URL = os.getenv("TURSO_DATABASE_URL") or os.getenv("TURSO_URL", "").strip()
+TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN") or os.getenv("TURSO_TOKEN", "").strip()
 DB_PATH = os.getenv("DB_PATH", "vadrine.db")
 
 PAYMENT_DETAILS = os.getenv(
