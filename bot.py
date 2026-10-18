@@ -89,6 +89,9 @@ PUBLIC_URL = (os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "")
 #    Страховка: адмін-команда /backup надсилає вам у чат свіжу копію бази.
 DB_PATH = os.getenv("DB_PATH", "vadrine.db")
 
+TURSO_URL = os.getenv("TURSO_DATABASE_URL") or os.getenv("TURSO_URL", "").strip()
+TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN") or os.getenv("TURSO_TOKEN", "").strip()
+
 # 6) Реквізити для способу оплати «за реквізитами» — бот надішле їх клієнту після замовлення.
 PAYMENT_DETAILS = os.getenv(
     "PAYMENT_DETAILS",
@@ -308,36 +311,59 @@ def _sel(cols: tuple) -> str:
 
 
 class Database:
-    """Локальна база SQLite (файл vadrine.db). Усі операції виконуються в одному окремому
-    потоці (self.executor) — з async-коду їх викликають через dbrun(), щоб не блокувати бота."""
+    """Хмарна база Turso (libsql) або локальна SQLite з автоматичним реконнектом."""
 
     def __init__(self, path: str) -> None:
         self.path = path
         self.lock = threading.RLock()
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="db")
-        self.executor.submit(self._connect).result()   # з'єднання створюється саме в потоці БД
+        self.executor.submit(self._connect).result()
 
     def _connect(self) -> None:
-        folder = os.path.dirname(os.path.abspath(self.path))
-        os.makedirs(folder, exist_ok=True)
-        self.conn = sqlite3.connect(self.path, check_same_thread=False)
-        self.conn.execute("PRAGMA journal_mode=WAL")
+        if TURSO_URL:
+            import libsql
+            self.conn = libsql.connect(TURSO_URL, auth_token=TURSO_TOKEN)
+            log.info("Успішно підключено до хмарної бази даних Turso")
+        else:
+            folder = os.path.dirname(os.path.abspath(self.path))
+            os.makedirs(folder, exist_ok=True)
+            self.conn = sqlite3.connect(self.path, check_same_thread=False)
+            self.conn.execute("PRAGMA journal_mode=WAL")
+            log.info("Використовується локальна база SQLite (%s)", self.path)
+
         for statement in SCHEMA.split(";"):
             if statement.strip():
                 self.conn.execute(statement)
         self.conn.commit()
-        for column in ("details", "ttn"):               # міграція старих баз: додаємо нові колонки
+        for column in ("details", "ttn"):
             try:
                 self.conn.execute(f"SELECT {column} FROM orders LIMIT 1").fetchall()
             except Exception:
                 self.conn.execute(f"ALTER TABLE orders ADD COLUMN {column} TEXT")
                 self.conn.commit()
-        added = self.seed_products(SEED_PRODUCTS)       # порожній каталог → наповнюємо початковими товарами
+        added = self.seed_products(SEED_PRODUCTS)
         if added:
             log.info("Каталог у базі був порожній — додано %s товари(ів) з SEED_PRODUCTS", added)
 
+    def execute(self, sql: str, params: tuple = ()):
+        """Виконує SQL-запит з автоматичним відновленням хмарного стріму Turso у разі розриву."""
+        for attempt in range(2):
+            try:
+                return self.conn.execute(sql, params)
+            except Exception as e:
+                err_str = str(e)
+                if TURSO_URL and any(err in err_str for err in ("stream not found", "Hrana", "closed")) and attempt == 0:
+                    log.warning("З'єднання з Turso втрачено (%s), перепідключення...", err_str)
+                    try:
+                        self.conn.close()
+                    except Exception:
+                        pass
+                    import libsql
+                    self.conn = libsql.connect(TURSO_URL, auth_token=TURSO_TOKEN)
+                else:
+                    raise e
+
     def snapshot(self, dest: str) -> None:
-        """Цілісна копія бази у файл dest (SQLite backup API; безпечно навіть під час запису)."""
         with self.lock:
             target = sqlite3.connect(dest)
             try:
@@ -347,9 +373,9 @@ class Database:
 
     def set_img(self, product_id: str, img: str) -> bool:
         with self.tx():
-            if not self.conn.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone():
+            if not self.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone():
                 return False
-            self.conn.execute("UPDATE products SET img=? WHERE id=?", (img, product_id))
+            self.execute("UPDATE products SET img=? WHERE id=?", (img, product_id))
             return True
 
     def close(self) -> None:
@@ -361,13 +387,11 @@ class Database:
         finally:
             self.executor.shutdown(wait=False)
 
-    # --- службові ---------------------------------------------------------
     @contextmanager
     def tx(self):
-        """Транзакція: commit при успіху, rollback при помилці."""
         with self.lock:
             try:
-                yield self.conn
+                yield self
                 self.conn.commit()
             except Exception:
                 try:
@@ -377,35 +401,31 @@ class Database:
                 raise
 
     def _one(self, sql: str, params: tuple, cols: tuple) -> dict | None:
-        row = self.conn.execute(sql, params).fetchone()
+        row = self.execute(sql, params).fetchone()
         return dict(zip(cols, row)) if row else None
 
     def _all(self, sql: str, params: tuple, cols: tuple) -> list[dict]:
-        return [dict(zip(cols, row)) for row in self.conn.execute(sql, params).fetchall()]
+        return [dict(zip(cols, row)) for row in self.execute(sql, params).fetchall()]
 
-    # --- користувачі -----------------------------------------------------
     def upsert_user(self, user_id: int, first_name: str, username: str | None) -> bool:
-        """Створює/оновлює користувача. True — якщо користувач НОВИЙ."""
         with self.tx():
-            exists = self.conn.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone()
+            exists = self.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone()
             if exists:
-                self.conn.execute("UPDATE users SET first_name=?, username=? WHERE user_id=?",
-                                  (first_name, username, user_id))
+                self.execute("UPDATE users SET first_name=?, username=? WHERE user_id=?",
+                             (first_name, username, user_id))
                 return False
-            self.conn.execute(
+            self.execute(
                 "INSERT INTO users(user_id, first_name, username, spins_total, created_at) VALUES (?,?,?,?,?)",
                 (user_id, first_name, username, DEFAULT_SPINS, int(time.time())))
             return True
 
     def ensure_user(self, user_id: int) -> None:
-        """Гарантує, що рядок користувача існує (з базовою кількістю спроб)."""
         with self.tx():
-            self.conn.execute(
+            self.execute(
                 "INSERT OR IGNORE INTO users(user_id, spins_total, created_at) VALUES (?,?,?)",
                 (user_id, DEFAULT_SPINS, int(time.time())))
 
     def find_user(self, ref: str) -> dict | None:
-        """Шукає користувача за ID (число) або @username."""
         ref = ref.strip()
         with self.lock:
             if ref.isdigit():
@@ -418,21 +438,18 @@ class Database:
             return self._one(f"SELECT {_sel(USER_COLS)} FROM users WHERE user_id=?", (user_id,), USER_COLS)
 
     def add_spins(self, user_id: int, delta: int) -> int:
-        """Додає (або віднімає) спроби. Нижче вже використаних не опуститься. Повертає, скільки лишилось."""
         with self.tx():
-            self.conn.execute("UPDATE users SET spins_total = MAX(spins_used, spins_total + ?) WHERE user_id=?",
-                              (delta, user_id))
+            self.execute("UPDATE users SET spins_total = MAX(spins_used, spins_total + ?) WHERE user_id=?",
+                         (delta, user_id))
         return self.attempts_left(user_id)
 
     def add_spins_all(self, delta: int) -> int:
-        """Додає спроби ВСІМ користувачам (акція). Повертає, скількох користувачів оновлено."""
         with self.tx():
-            count = self.conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-            self.conn.execute("UPDATE users SET spins_total = MAX(spins_used, spins_total + ?)", (delta,))
+            count = self.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+            self.execute("UPDATE users SET spins_total = MAX(spins_used, spins_total + ?)", (delta,))
             return count
 
     def apply_referral(self, invitee: int, inviter: int) -> bool:
-        """Нараховує запросившому +1 спробу. Лише один раз для нового користувача."""
         if invitee == inviter:
             return False
         with self.tx():
@@ -442,69 +459,63 @@ class Database:
                 return False
             if inviter_row["referrals"] >= MAX_REFERRALS:
                 return False
-            self.conn.execute("UPDATE users SET referred_by=? WHERE user_id=?", (inviter, invitee))
-            self.conn.execute("UPDATE users SET spins_total=spins_total+1, referrals=referrals+1 WHERE user_id=?",
-                              (inviter,))
+            self.execute("UPDATE users SET referred_by=? WHERE user_id=?", (inviter, invitee))
+            self.execute("UPDATE users SET spins_total=spins_total+1, referrals=referrals+1 WHERE user_id=?",
+                         (inviter,))
             return True
 
     def attempts_left(self, user_id: int) -> int:
         row = self.get_user(user_id)
         return max(0, row["spins_total"] - row["spins_used"]) if row else 0
 
-    # --- промокоди -------------------------------------------------------
     def get_active_promo(self, user_id: int) -> dict | None:
         with self.lock:
             return self._one(f"SELECT {_sel(PROMO_COLS)} FROM promos WHERE user_id=? AND expires_at>?",
                              (user_id, int(time.time())), PROMO_COLS)
 
     def spin(self, user_id: int, code: str) -> tuple[str, dict | None]:
-        """Атомарно: перевіряє спроби, списує одну і створює промокод на 24 години.
-        Якщо в користувача вже є активний промокод — новий виграш ЗАМІНЮЄ його."""
         now = int(time.time())
         with self.tx():
-            self.conn.execute(
+            self.execute(
                 "INSERT OR IGNORE INTO users(user_id, spins_total, created_at) VALUES (?,?,?)",
                 (user_id, DEFAULT_SPINS, now))
             user = self._one("SELECT spins_total, spins_used FROM users WHERE user_id=?", (user_id,),
                              ("spins_total", "spins_used"))
             if user["spins_total"] - user["spins_used"] < 1:
                 return "no_attempts", None
-            self.conn.execute("UPDATE users SET spins_used=spins_used+1 WHERE user_id=? AND spins_total-spins_used>=1",
-                              (user_id,))   # подвійний захист: використаних ніколи не більше, ніж нараховано
-            self.conn.execute(
+            self.execute("UPDATE users SET spins_used=spins_used+1 WHERE user_id=? AND spins_total-spins_used>=1",
+                         (user_id,))
+            self.execute(
                 "INSERT OR REPLACE INTO promos(user_id, code, issued_at, expires_at, reminded) VALUES (?,?,?,?,0)",
                 (user_id, code, now, now + PROMO_TTL))
             return "ok", {"user_id": user_id, "code": code, "issued_at": now, "expires_at": now + PROMO_TTL}
 
     def delete_promo(self, user_id: int, expires_at: int | None = None) -> bool:
-        """Видаляє промокод. Якщо вказано expires_at — лише той самий (щоб старий таймер
-        не видалив новий промокод). True — якщо щось було видалено."""
         with self.tx():
             if expires_at is None:
-                existed = self.conn.execute("SELECT 1 FROM promos WHERE user_id=?", (user_id,)).fetchone()
-                self.conn.execute("DELETE FROM promos WHERE user_id=?", (user_id,))
+                existed = self.execute("SELECT 1 FROM promos WHERE user_id=?", (user_id,)).fetchone()
+                self.execute("DELETE FROM promos WHERE user_id=?", (user_id,))
             else:
-                existed = self.conn.execute("SELECT 1 FROM promos WHERE user_id=? AND expires_at=?",
-                                            (user_id, expires_at)).fetchone()
-                self.conn.execute("DELETE FROM promos WHERE user_id=? AND expires_at=?", (user_id, expires_at))
+                existed = self.execute("SELECT 1 FROM promos WHERE user_id=? AND expires_at=?",
+                                       (user_id, expires_at)).fetchone()
+                self.execute("DELETE FROM promos WHERE user_id=? AND expires_at=?", (user_id, expires_at))
             return existed is not None
 
     def mark_reminded(self, user_id: int) -> None:
         with self.tx():
-            self.conn.execute("UPDATE promos SET reminded=1 WHERE user_id=?", (user_id,))
+            self.execute("UPDATE promos SET reminded=1 WHERE user_id=?", (user_id,))
 
     def list_promos(self) -> list[dict]:
         with self.lock:
             return self._all(f"SELECT {_sel(PROMO_COLS)} FROM promos", (), PROMO_COLS)
 
-    # --- кошик -----------------------------------------------------------
     def set_cart(self, user_id: int, count: int) -> None:
         with self.tx():
             if count > 0:
-                self.conn.execute("INSERT OR REPLACE INTO carts(user_id, item_count, updated_at) VALUES (?,?,?)",
-                                  (user_id, count, int(time.time())))
+                self.execute("INSERT OR REPLACE INTO carts(user_id, item_count, updated_at) VALUES (?,?,?)",
+                             (user_id, count, int(time.time())))
             else:
-                self.conn.execute("DELETE FROM carts WHERE user_id=?", (user_id,))
+                self.execute("DELETE FROM carts WHERE user_id=?", (user_id,))
 
     def get_cart(self, user_id: int) -> dict | None:
         with self.lock:
@@ -514,29 +525,24 @@ class Database:
         with self.lock:
             return self._all(f"SELECT {_sel(CART_COLS)} FROM carts", (), CART_COLS)
 
-    # --- замовлення ------------------------------------------------------
     def consume_order(self, user_id: int, payload: str, total: int, promo_code: str | None,
                       details: str = "") -> tuple[int, int]:
-        """Зберігає замовлення і В ТІЙ САМІЙ ТРАНЗАКЦІЇ видаляє промокод та кошик.
-        Повертає (id замовлення, час створення)."""
         now = int(time.time())
         with self.tx():
-            self.conn.execute(
+            self.execute(
                 "INSERT INTO orders(user_id, created_at, total, promo_code, payload, details) VALUES (?,?,?,?,?,?)",
                 (user_id, now, total, promo_code, payload, details or None))
-            order_id = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-            self.conn.execute("DELETE FROM promos WHERE user_id=?", (user_id,))
-            self.conn.execute("DELETE FROM carts WHERE user_id=?", (user_id,))
+            order_id = self.execute("SELECT last_insert_rowid()").fetchone()[0]
+            self.execute("DELETE FROM promos WHERE user_id=?", (user_id,))
+            self.execute("DELETE FROM carts WHERE user_id=?", (user_id,))
             return int(order_id), now
 
-    # --- каталог товарів -------------------------------------------------
     def seed_products(self, items: list[dict]) -> int:
-        """Наповнює каталог, лише якщо таблиця порожня. Повертає кількість доданих товарів."""
         with self.tx():
-            if self.conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]:
+            if self.execute("SELECT COUNT(*) FROM products").fetchone()[0]:
                 return 0
             for p in items:
-                self.conn.execute(
+                self.execute(
                     'INSERT INTO products(id, name, price, "desc", img, emoji, available) VALUES (?,?,?,?,?,?,1)',
                     (p["id"], p["name"], int(p["price"]), p.get("desc", ""), p.get("img", ""), p.get("emoji", "🛍")))
             return len(items)
@@ -553,20 +559,19 @@ class Database:
             return self._one(f"SELECT {_sel(PRODUCT_COLS)} FROM products WHERE id=?", (product_id,), PRODUCT_COLS)
 
     def toggle_product(self, product_id: str) -> bool | None:
-        """Перемикає наявність. Повертає нове значення (True — є в наявності) або None, якщо товару немає."""
         with self.tx():
             row = self._one("SELECT available FROM products WHERE id=?", (product_id,), ("available",))
             if not row:
                 return None
             new_value = 0 if row["available"] else 1
-            self.conn.execute("UPDATE products SET available=? WHERE id=?", (new_value, product_id))
+            self.execute("UPDATE products SET available=? WHERE id=?", (new_value, product_id))
             return bool(new_value)
 
     def set_price(self, product_id: str, price: int) -> bool:
         with self.tx():
-            if not self.conn.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone():
+            if not self.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone():
                 return False
-            self.conn.execute("UPDATE products SET price=? WHERE id=?", (int(price), product_id))
+            self.execute("UPDATE products SET price=? WHERE id=?", (int(price), product_id))
             return True
 
     def get_order(self, order_id: int) -> dict | None:
@@ -575,16 +580,14 @@ class Database:
 
     def set_ttn(self, order_id: int, ttn: str) -> None:
         with self.tx():
-            self.conn.execute("UPDATE orders SET ttn=? WHERE id=?", (ttn, int(order_id)))
+            self.execute("UPDATE orders SET ttn=? WHERE id=?", (ttn, int(order_id)))
 
     def user_has_ttn(self, user_id: int, ttn: str) -> bool:
-        """Чи належить ця ТТН замовленню користувача (щоб не відстежувати чужі посилки)."""
         with self.lock:
-            return self.conn.execute("SELECT 1 FROM orders WHERE user_id=? AND ttn=? LIMIT 1",
-                                     (user_id, ttn)).fetchone() is not None
+            return self.execute("SELECT 1 FROM orders WHERE user_id=? AND ttn=? LIMIT 1",
+                                (user_id, ttn)).fetchone() is not None
 
     def get_user_orders(self, user_id: int, limit: int = 20) -> list[dict]:
-        """Історія замовлень користувача: від нових до старих."""
         with self.lock:
             return self._all(
                 f"SELECT {_sel(ORDER_COLS)} FROM orders WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT ?",
