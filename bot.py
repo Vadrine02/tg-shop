@@ -1,5 +1,33 @@
 """
 vadrine — серверна частина Telegram Mini App (aiogram 3 + SQLite + aiohttp).
+
+Що вміє бот:
+  • /start відкриває Mini App через нижню клавіатуру (щоб працював sendData);
+  • реферальна система: /start ref_<id> дає запросившому +1 спробу колеса;
+  • адмін видає прокрути: /give <id або @username> [кількість], /giveall <кількість>, /spins;
+  • крутити можна, поки є спроби; новий виграш замінює попередній промокод;
+  • сам визначає виграш колеса (шанси на сервері, клієнт підробити не може);
+  • промокод живе 24 години і видаляється з бази: після замовлення АБО через 24 год;
+  • через 30 хвилин нагадує про покинутий кошик;
+  • зберігає все (користувачі, спроби колеса, замовлення, каталог) у локальному файлі SQLite — vadrine.db;
+  • відстежує посилки Нової Пошти за ТТН: /setttn (адмін) + кнопка «Відстежити посилку» в Mini App;
+  • каталог товарів лежить у базі й змінюється командами /products, /toggleproduct, /setprice (без перезапуску);
+  • показує історію замовлень: /myorders у чаті та вкладка «Мої замовлення» в Mini App;
+  • приймає замовлення з Mini App (F.web_app_data), перераховує суму сам і
+    шле красиве повідомлення адміну та подяку клієнту.
+
+Встановлення:  pip install -U aiogram        (aiohttp встановиться разом з ним)
+Запуск:        python bot.py
+
+────────────────────────────────────────────────────────────────────
+ЯК ЦЕ ПРАЦЮЄ (коротко)
+Mini App, відкритий кнопкою клавіатури, не може написати боту до sendData(),
+а sendData() закриває додаток. Тому прокрутку колеса та зміни кошика Mini App
+відправляє на HTTP-API цього ж бота (він уже відкритий на Render як Web Service).
+Бот підписує посилання на Mini App для кожного користувача (параметри uid та sig),
+і по цьому підпису API знає, хто звертається.
+Саме замовлення, як і раніше, йде через sendData → F.web_app_data.
+────────────────────────────────────────────────────────────────────
 """
 
 from __future__ import annotations
@@ -14,6 +42,7 @@ import os
 import random
 import re
 import sqlite3
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -22,7 +51,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, urlparse
 from zoneinfo import ZoneInfo
 
-import aiohttp
+import aiohttp                # встановлюється разом з aiogram
 from aiohttp import web
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -31,52 +60,82 @@ from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import FSInputFile, KeyboardButton, Message, ReplyKeyboardMarkup, WebAppInfo
 
+# ======================================================================
+# НАЛАШТУВАННЯ — ВСТАВТЕ СВОЇ ДАНІ
+# Найкраще задати їх у Render → Environment (так токен не потрапить на GitHub),
+# але можна вписати й прямо сюди замість текстів у лапках.
+# ======================================================================
+
+# 1) Токен бота від @BotFather.
 BOT_TOKEN = os.getenv("BOT_TOKEN", "ВСТАВТЕ_ТОКЕН_БОТА")
+
+# 2) Ваш Telegram ID (число) — на нього приходитимуть замовлення.
+#    Дізнатись: бот @userinfobot. Обов'язково натисніть /start у своєму боті!
 ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
+
+# 3) ПОСИЛАННЯ НА ВАШ MINI APP НА GITHUB PAGES (HTTPS, без параметрів).
+#    Приклад: https://vadrine02.github.io/vadrine/
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://vadrine02.github.io/tg-shop/")
+
+# 4) Публічна адреса цього бота на Render, напр. https://vadrine-bot.onrender.com
+#    Render сам задає змінну RENDER_EXTERNAL_URL, тому зазвичай нічого вписувати не треба.
 PUBLIC_URL = (os.getenv("PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "").rstrip("/")
 
-TURSO_URL = os.getenv("TURSO_DATABASE_URL") or os.getenv("TURSO_URL", "").strip()
-TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN") or os.getenv("TURSO_TOKEN", "").strip()
+# 5) БАЗА ДАНИХ — локальний файл SQLite (vadrine.db): користувачі, спроби колеса, промокоди,
+#    замовлення й каталог товарів. Шлях можна змінити змінною DB_PATH.
+#    УВАГА (Render Free): диск там ТИМЧАСОВИЙ — файл стирається при кожному деплої та перезапуску.
+#    Тоді спроби колеса й історія замовлень скидаються, а каталог знову наповнюється з SEED_PRODUCTS.
+#    Щоб дані жили: підключіть Render Disk (платний) і вкажіть DB_PATH=/var/data/vadrine.db.
+#    Страховка: адмін-команда /backup надсилає вам у чат свіжу копію бази.
 DB_PATH = os.getenv("DB_PATH", "vadrine.db")
 
+# 6) Реквізити для способу оплати «за реквізитами» — бот надішле їх клієнту після замовлення.
 PAYMENT_DETAILS = os.getenv(
     "PAYMENT_DETAILS",
     "IBAN: UA00 0000 0000 0000 0000 0000 00000\nКартка Mono: 0000 0000 0000 0000",
 )
+
+# 7) Ключ API Нової Пошти — НЕОБОВ'ЯЗКОВО. Публічне відстеження за ТТН зазвичай працює й без ключа.
+#    Якщо Нова Пошта почне повертати помилку — отримайте безкоштовний ключ у особистому кабінеті
+#    business.novaposhta.ua (Налаштування → Безпека → Ключі API) і вкажіть його тут або в Render → Environment.
 NP_API_KEY = os.getenv("NP_API_KEY", "").strip()
 
 # ----------------------------------------------------------------------
-# КАТАЛОГ ТОВАРІВ (додано прапорець "available")
+# Бізнес-налаштування (мають збігатися з index.html)
 # ----------------------------------------------------------------------
-CATALOG = {
-    "bracelet1":  {"name": "Vivienne Westwood Mayfair Bas Relief Bracelet", "price": 549, "available": True},
-    "necklace1": {"name": "Vivienne Westwood Mayfair Large Orb Pendant Necklace", "price": 399, "available": True},
-    "necklace2": {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace чорний", "price": 399, "available": True},  # Немає в наявності
-    "necklace3": {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace рожевий", "price": 399, "available": True},
-    "necklace4": {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace фіолетовий", "price": 399, "available": True},
-    "necklace5": {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace прозорий", "price": 399, "available": True},
-    "necklace6": {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace червоний", "price": 399, "available": True},
-    "necklace7": {"name": "Vivienne Westwood Mini Bas Relief Pendant Necklace блакитний", "price": 399, "available": True},
-    "necklace8": {"name": "Кулон Vivienne Westwood ", "price": 299, "available": True},
-    "necklace9": {"name": "Кулон скріпка Vivienne Westwood", "price": 299, "available": True},
-    "bracelet2":  {"name": "Vivienne Westwood Lucrece Safety Pin Orb Bracelet", "price": 449, "available": True},
-    "necklace10": {"name": "Vivienne Westwood Bat Wing Orb Necklace ", "price": 399, "available": True},
-    "earrings1":  {"name": "Сережки Vivienne Westwood", "price": 299, "available": True},
-    "necklace11": {"name": "Vivienne Westwood Ornamental Small Orb Pendant Necklace чорний", "price": 449, "available": True},
-    "necklace12": {"name": "Vivienne Westwood Ornamental Small Orb Pendant Necklace фіолетовий", "price": 449, "available": True},
-    "necklace13": {"name": "Vivienne Westwood New Small Orb Pendant Necklace червоний", "price": 499, "available": True},
-    "necklace14": {"name": "Vivienne Westwood New Small Orb Pendant Necklace синій", "price": 499, "available": True},
-    "necklace15": {"name": "Vivienne Westwood New Small Orb Pendant Necklace чорний", "price": 499, "available": True},
-    "wallet1":    {"name": "Vivienne Westwood Vintage Water Orb Tri-Fold Wallet", "price": 1299, "available": True},
-    "necklace16": {"name": "Pandora Sparkling Heart Collier Necklace", "price": 499, "available": True},
-    "clutch1":    {"name": "Zadig & Voltaire Rock Clutch White", "price": 1399, "available": True},
-    "clutch2":    {"name": "Zadig & Voltaire Rock Clutch Black", "price": 1399, "available": True},
-    "clutch3":    {"name": "Zadig & Voltaire Rock Quilted Leather Clutch White", "price": 1399, "available": True},
-    "clutch4":    {"name": "Zadig & Voltaire Rock Quilted Leather Clutch Black", "price": 1399, "available": True},
-    "clutch5":    {"name": "Zadig & Voltaire Rock Studs Clutch", "price": 1699, "available": True},
-}
+# Початковий каталог. Використовується ЛИШЕ один раз: коли таблиця products у базі порожня,
+# бот заповнює її цими товарами. Далі каталогом керуєте з чату: /products, /toggleproduct, /setprice.
+SEED_PRODUCTS = [
+    # id — латиницею, без пробілів. img — посилання на фото (https://…) або шлях у репозиторії (images/назва.jpg);
+    # порожній img — на картці показується емодзі. Фото можна змінити й командою /setimg.
+    {"id": "bracelet1",  "name": "Vivienne Westwood Mayfair Bas Relief Bracelet", "price": 549, "emoji": "📿", "desc": "Фірмовий браслет Mayfair Bas Relief", "img": "https://vadrine02.github.io/tg-shop/images/bracelet1.jpg"},
+    {"id": "necklace1",  "name": "Vivienne Westwood Mayfair Large Orb Pendant Necklace", "price": 399, "emoji": "💎", "desc": "Підвіска Large Orb", "img": "https://vadrine02.github.io/tg-shop/images/necklace1.jpg"},
+    {"id": "necklace2",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace чорний", "price": 399, "emoji": "💎", "desc": "Чорна підвіска Mini Bas Relief", "img": "https://vadrine02.github.io/tg-shop/images/necklace2.jpg"},
+    {"id": "necklace3",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace рожевий", "price": 399, "emoji": "💎", "desc": "Рожева підвіска Mini Bas Relief", "img": "https://vadrine02.github.io/tg-shop/images/necklace3.jpg"},
+    {"id": "necklace4",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace фіолетовий", "price": 399, "emoji": "💎", "desc": "Фіолетова підвіска Mini Bas Relief", "img": "https://vadrine02.github.io/tg-shop/images/necklace4.jpg"},
+    {"id": "necklace5",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace прозорий", "price": 399, "emoji": "💎", "desc": "Прозора підвіска Mini Bas Relief", "img": "https://vadrine02.github.io/tg-shop/images/necklace5.jpg"},
+    {"id": "necklace6",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace червоний", "price": 399, "emoji": "💎", "desc": "Червона підвіска Mini Bas Relief", "img": "https://vadrine02.github.io/tg-shop/images/necklace6.jpg"},
+    {"id": "necklace7",  "name": "Vivienne Westwood Mini Bas Relief Pendant Necklace блакитний", "price": 399, "emoji": "💎", "desc": "Блакитна підвіска Mini Bas Relief", "img": "https://vadrine02.github.io/tg-shop/images/necklace7.jpg"},
+    {"id": "necklace8",  "name": "Кулон Vivienne Westwood", "price": 299, "emoji": "💎", "desc": "Кулон Vivienne Westwood", "img": "https://vadrine02.github.io/tg-shop/images/necklace8.jpg"},
+    {"id": "necklace9",  "name": "Кулон скріпка Vivienne Westwood", "price": 299, "emoji": "📎", "desc": "Кулон-скріпка Vivienne Westwood", "img": "https://vadrine02.github.io/tg-shop/images/necklace9.jpg"},
+    {"id": "bracelet2",  "name": "Vivienne Westwood Lucrece Safety Pin Orb Bracelet", "price": 449, "emoji": "📿", "desc": "Браслет Lucrece Safety Pin Orb", "img": "https://vadrine02.github.io/tg-shop/images/bracelet2.jpg"},
+    {"id": "necklace10", "name": "Vivienne Westwood Bat Wing Orb Necklace", "price": 399, "emoji": "🦇", "desc": "Підвіска Bat Wing Orb", "img": "https://vadrine02.github.io/tg-shop/images/necklace10.jpg"},
+    {"id": "earrings1",  "name": "Сережки Vivienne Westwood", "price": 299, "emoji": "✨", "desc": "Сережки Vivienne Westwood", "img": "https://vadrine02.github.io/tg-shop/images/earrings1.jpg"},
+    {"id": "necklace11", "name": "Vivienne Westwood Ornamental Small Orb Pendant Necklace чорний", "price": 449, "emoji": "💎", "desc": "Чорна підвіска Ornamental Small Orb", "img": "https://vadrine02.github.io/tg-shop/images/necklace11.jpg"},
+    {"id": "necklace12", "name": "Vivienne Westwood Ornamental Small Orb Pendant Necklace фіолетовий", "price": 449, "emoji": "💎", "desc": "Фіолетова підвіска Ornamental Small Orb", "img": "https://vadrine02.github.io/tg-shop/images/necklace12.jpg"},
+    {"id": "necklace13", "name": "Vivienne Westwood New Small Orb Pendant Necklace червоний", "price": 499, "emoji": "💎", "desc": "Червона підвіска New Small Orb", "img": "https://vadrine02.github.io/tg-shop/images/necklace13.jpg"},
+    {"id": "necklace14", "name": "Vivienne Westwood New Small Orb Pendant Necklace синій", "price": 499, "emoji": "💎", "desc": "Синя підвіска New Small Orb", "img": "https://vadrine02.github.io/tg-shop/images/necklace14.jpg"},
+    {"id": "necklace15", "name": "Vivienne Westwood New Small Orb Pendant Necklace чорний", "price": 499, "emoji": "💎", "desc": "Чорна підвіска New Small Orb", "img": "https://vadrine02.github.io/tg-shop/images/necklace15.jpg"},
+    {"id": "wallet1",    "name": "Vivienne Westwood Vintage Water Orb Tri-Fold Wallet", "price": 1299, "emoji": "👛", "desc": "Шкіряний гаманець Tri-Fold", "img": "https://vadrine02.github.io/tg-shop/images/wallet1.jpg"},
+    {"id": "necklace16", "name": "Pandora Sparkling Heart Collier Necklace", "price": 499, "emoji": "💖", "desc": "Кольє Pandora Sparkling Heart", "img": "https://vadrine02.github.io/tg-shop/images/necklace16.jpg"},
+    {"id": "clutch1",    "name": "Zadig & Voltaire Rock Clutch White", "price": 1399, "emoji": "👜", "desc": "Білий клатч Zadig & Voltaire Rock", "img": "https://vadrine02.github.io/tg-shop/images/clutch1.jpg"},
+    {"id": "clutch2",    "name": "Zadig & Voltaire Rock Clutch Black", "price": 1399, "emoji": "👜", "desc": "Чорний клатч Zadig & Voltaire Rock", "img": "https://vadrine02.github.io/tg-shop/images/clutch2.jpg"},
+    {"id": "clutch3",    "name": "Zadig & Voltaire Rock Quilted Leather Clutch White", "price": 1399, "emoji": "👜", "desc": "Стьобаний білий клатч Zadig & Voltaire", "img": "https://vadrine02.github.io/tg-shop/images/clutch3.jpg"},
+    {"id": "clutch4",    "name": "Zadig & Voltaire Rock Quilted Leather Clutch Black", "price": 1399, "emoji": "👜", "desc": "Стьобаний чорний клатч Zadig & Voltaire", "img": "https://vadrine02.github.io/tg-shop/images/clutch4.jpg"},
+    {"id": "clutch5",    "name": "Zadig & Voltaire Rock Studs Clutch", "price": 1699, "emoji": "👜", "desc": "Клатч Zadig & Voltaire із заклепками", "img": "https://vadrine02.github.io/tg-shop/images/clutch5.jpg"},
+]
 
+# Призи колеса. weight = шанс у % (сума 100).
 PRIZES = {
     "VAD10":       {"title": "Знижка 10%",                             "weight": 30},
     "FREESHIP600": {"title": "Безкоштовна доставка від 600 ₴",         "weight": 25},
@@ -85,30 +144,40 @@ PRIZES = {
     "WESTWOOD":    {"title": "Прикраса Vivienne Westwood у подарунок", "weight": 5},
 }
 
-FREE_SHIP_FROM = 600
-PROMO_TTL = 24 * 60 * 60
-REMINDER_DELAY = 30 * 60
-DEFAULT_SPINS = 1
-MAX_REFERRALS = 10
+# Вартість доставки в суму замовлення НЕ входить: Нова Пошта бере її за своїм тарифом.
+# Приз FREESHIP600 означає, що відправлення (від суми нижче) оплачуєте ви.
+FREE_SHIP_FROM = 600         # ₴, поріг для FREESHIP600
+PROMO_TTL = 24 * 60 * 60     # життя промокоду: 24 години
+REMINDER_DELAY = 30 * 60     # нагадування про кошик: 30 хвилин
+DEFAULT_SPINS = 1            # скільки спроб у НОВОГО користувача (хочете більше — поставте 3, 5…)
+MAX_REFERRALS = 10           # ліміт бонусних спроб за запрошення (захист від накруток)
 MAX_QTY = 20
 
 PAYMENTS = {
     "cod":  "Післяплата (передплата 100 ₴, решта при отриманні)",
     "iban": "Повна оплата на рахунок IBAN",
 }
-PAYMENT_SHORT = {"cod": "Післяплата", "iban": "Оплата на IBAN"}
-PREPAYMENT = 100
+PAYMENT_SHORT = {"cod": "Післяплата", "iban": "Оплата на IBAN"}   # для списків замовлень
+PREPAYMENT = 100             # ₴, передплата при післяплаті
+
+# ======================================================================
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("vadrine")
 
 router = Router()
 
+
+# ----------------------------------------------------------------------
+# Допоміжні функції
+# ----------------------------------------------------------------------
 def esc(value: object) -> str:
     return html.escape(str(value), quote=False)
 
+
 def money(value: int) -> str:
     return f"{value:,}".replace(",", " ") + " ₴"
+
 
 def plural(n: int, one: str, few: str, many: str) -> str:
     a, b = n % 10, n % 100
@@ -118,7 +187,9 @@ def plural(n: int, one: str, few: str, many: str) -> str:
         return few
     return many
 
+
 def human_left(seconds: int) -> str:
+    """Скільки лишилось: «23 години», «45 хвилин»."""
     seconds = max(0, int(seconds))
     hours, minutes = seconds // 3600, (seconds % 3600) // 60
     if hours >= 1:
@@ -126,41 +197,60 @@ def human_left(seconds: int) -> str:
     minutes = max(1, minutes)
     return f"{minutes} {plural(minutes, 'хвилина', 'хвилини', 'хвилин')}"
 
+
 try:
     KYIV = ZoneInfo("Europe/Kyiv")
 except Exception:
     try:
         KYIV = ZoneInfo("Europe/Kiev")
-    except Exception:
+    except Exception:                      # немає бази часових поясів
         KYIV = timezone(timedelta(hours=3))
+
 
 def fmt_dt(ts: int) -> str:
     return datetime.fromtimestamp(ts, KYIV).strftime("%d.%m.%Y %H:%M")
 
+
 def order_number(order_id: int, ts: int) -> str:
     return f"VD-{datetime.fromtimestamp(ts, KYIV).strftime('%d%m')}-{order_id}"
 
+
 def make_sig(user_id: int) -> str:
+    """Підпис користувача для посилання на Mini App (HMAC від токена бота)."""
     return hmac.new(BOT_TOKEN.encode(), f"vadrine:{user_id}".encode(), hashlib.sha256).hexdigest()[:32]
+
 
 def check_sig(user_id: int, sig: str) -> bool:
     return hmac.compare_digest(make_sig(user_id), str(sig or ""))
 
-def webapp_url_for(user_id: int, **extra: str) -> str:
+
+def webapp_url_for(user_id: int) -> str:
+    """Посилання на Mini App з параметрами: хто користувач і куди слати запити."""
     params = {"uid": user_id, "sig": make_sig(user_id)}
     if PUBLIC_URL:
         params["api"] = PUBLIC_URL
-    params.update(extra)
     sep = "&" if "?" in WEBAPP_URL else "?"
     return f"{WEBAPP_URL}{sep}{urlencode(params)}"
 
-def webapp_keyboard(user_id: int, text: str = "🛍 Відкрити vadrine", **extra: str) -> ReplyKeyboardMarkup:
+
+# Текст ПОСТІЙНОЇ кнопки в чаті. Він однаковий у ВСІХ повідомленнях бота (привітання, замовлення,
+# нагадування, сповіщення про ТТН), тому кнопка завжди відкриває каталог магазину. НЕ змінюйте його
+# під окремі повідомлення — інакше кнопка в чаті «перефарбується» під останнє повідомлення.
+WEBAPP_BUTTON_TEXT = "🛍 Відкрити vadrine"
+
+
+def webapp_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    # Саме KeyboardButton (а не Inline) — інакше sendData() не спрацює!
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=text, web_app=WebAppInfo(url=webapp_url_for(user_id, **extra)))]],
+        keyboard=[[KeyboardButton(text=WEBAPP_BUTTON_TEXT, web_app=WebAppInfo(url=webapp_url_for(user_id)))]],
         resize_keyboard=True,
         is_persistent=True,
     )
 
+
+# ----------------------------------------------------------------------
+# База даних SQLite (стандартна бібліотека, без додаткових залежностей)
+# ----------------------------------------------------------------------
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     user_id     INTEGER PRIMARY KEY,
@@ -193,44 +283,74 @@ CREATE TABLE IF NOT EXISTS orders (
     payload    TEXT    NOT NULL,
     details    TEXT,
     ttn        TEXT
+);
+CREATE TABLE IF NOT EXISTS products (
+    id        TEXT PRIMARY KEY,
+    name      TEXT    NOT NULL,
+    price     INTEGER NOT NULL,
+    "desc"    TEXT    NOT NULL DEFAULT '',
+    img       TEXT    NOT NULL DEFAULT '',
+    emoji     TEXT    NOT NULL DEFAULT '🛍',
+    available INTEGER NOT NULL DEFAULT 1
 )
 """
 
+# Колонки вказуємо явно, щоб код не залежав від порядку полів у таблицях
 USER_COLS = ("user_id", "first_name", "username", "spins_total", "spins_used", "referred_by", "referrals", "created_at")
 PROMO_COLS = ("user_id", "code", "issued_at", "expires_at", "reminded")
 CART_COLS = ("user_id", "item_count", "updated_at")
 ORDER_COLS = ("id", "user_id", "created_at", "total", "promo_code", "payload", "details", "ttn")
+PRODUCT_COLS = ("id", "name", "price", "desc", "img", "emoji", "available")
+
 
 def _sel(cols: tuple) -> str:
-    return ", ".join(cols)
+    return ", ".join(f'"{c}"' for c in cols)     # у лапках: "desc" — службове слово SQL
+
 
 class Database:
+    """Локальна база SQLite (файл vadrine.db). Усі операції виконуються в одному окремому
+    потоці (self.executor) — з async-коду їх викликають через dbrun(), щоб не блокувати бота."""
+
     def __init__(self, path: str) -> None:
         self.path = path
-        self.remote = bool(TURSO_URL and TURSO_TOKEN)
         self.lock = threading.RLock()
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="db")
-        self.executor.submit(self._connect).result()
+        self.executor.submit(self._connect).result()   # з'єднання створюється саме в потоці БД
 
     def _connect(self) -> None:
-        if self.remote:
-            import libsql
-            self.conn = libsql.connect(TURSO_URL, auth_token=TURSO_TOKEN)
-        else:
-            folder = os.path.dirname(os.path.abspath(self.path))
-            os.makedirs(folder, exist_ok=True)
-            self.conn = sqlite3.connect(self.path, check_same_thread=False)
-            self.conn.execute("PRAGMA journal_mode=WAL")
+        folder = os.path.dirname(os.path.abspath(self.path))
+        os.makedirs(folder, exist_ok=True)
+        self.conn = sqlite3.connect(self.path, check_same_thread=False)
+        self.conn.execute("PRAGMA journal_mode=WAL")
         for statement in SCHEMA.split(";"):
             if statement.strip():
                 self.conn.execute(statement)
         self.conn.commit()
-        for column in ("details", "ttn"):
+        for column in ("details", "ttn"):               # міграція старих баз: додаємо нові колонки
             try:
                 self.conn.execute(f"SELECT {column} FROM orders LIMIT 1").fetchall()
             except Exception:
                 self.conn.execute(f"ALTER TABLE orders ADD COLUMN {column} TEXT")
                 self.conn.commit()
+        added = self.seed_products(SEED_PRODUCTS)       # порожній каталог → наповнюємо початковими товарами
+        if added:
+            log.info("Каталог у базі був порожній — додано %s товари(ів) з SEED_PRODUCTS", added)
+
+    def snapshot(self, dest: str) -> None:
+        """Цілісна копія бази у файл dest (SQLite backup API; безпечно навіть під час запису)."""
+        with self.lock:
+            target = sqlite3.connect(dest)
+            try:
+                self.conn.backup(target)
+            finally:
+                target.close()
+
+    def set_img(self, product_id: str, img: str) -> bool:
+        with self.tx():
+            if not self.conn.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone():
+                return False
+            self.conn.execute("UPDATE products SET img=? WHERE id=?", (img, product_id))
+            return True
 
     def close(self) -> None:
         def _close() -> None:
@@ -241,8 +361,10 @@ class Database:
         finally:
             self.executor.shutdown(wait=False)
 
+    # --- службові ---------------------------------------------------------
     @contextmanager
     def tx(self):
+        """Транзакція: commit при успіху, rollback при помилці."""
         with self.lock:
             try:
                 yield self.conn
@@ -261,7 +383,9 @@ class Database:
     def _all(self, sql: str, params: tuple, cols: tuple) -> list[dict]:
         return [dict(zip(cols, row)) for row in self.conn.execute(sql, params).fetchall()]
 
+    # --- користувачі -----------------------------------------------------
     def upsert_user(self, user_id: int, first_name: str, username: str | None) -> bool:
+        """Створює/оновлює користувача. True — якщо користувач НОВИЙ."""
         with self.tx():
             exists = self.conn.execute("SELECT 1 FROM users WHERE user_id=?", (user_id,)).fetchone()
             if exists:
@@ -274,12 +398,14 @@ class Database:
             return True
 
     def ensure_user(self, user_id: int) -> None:
+        """Гарантує, що рядок користувача існує (з базовою кількістю спроб)."""
         with self.tx():
             self.conn.execute(
                 "INSERT OR IGNORE INTO users(user_id, spins_total, created_at) VALUES (?,?,?)",
                 (user_id, DEFAULT_SPINS, int(time.time())))
 
     def find_user(self, ref: str) -> dict | None:
+        """Шукає користувача за ID (число) або @username."""
         ref = ref.strip()
         with self.lock:
             if ref.isdigit():
@@ -292,18 +418,21 @@ class Database:
             return self._one(f"SELECT {_sel(USER_COLS)} FROM users WHERE user_id=?", (user_id,), USER_COLS)
 
     def add_spins(self, user_id: int, delta: int) -> int:
+        """Додає (або віднімає) спроби. Нижче вже використаних не опуститься. Повертає, скільки лишилось."""
         with self.tx():
             self.conn.execute("UPDATE users SET spins_total = MAX(spins_used, spins_total + ?) WHERE user_id=?",
                               (delta, user_id))
         return self.attempts_left(user_id)
 
     def add_spins_all(self, delta: int) -> int:
+        """Додає спроби ВСІМ користувачам (акція). Повертає, скількох користувачів оновлено."""
         with self.tx():
             count = self.conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
             self.conn.execute("UPDATE users SET spins_total = MAX(spins_used, spins_total + ?)", (delta,))
             return count
 
     def apply_referral(self, invitee: int, inviter: int) -> bool:
+        """Нараховує запросившому +1 спробу. Лише один раз для нового користувача."""
         if invitee == inviter:
             return False
         with self.tx():
@@ -322,12 +451,15 @@ class Database:
         row = self.get_user(user_id)
         return max(0, row["spins_total"] - row["spins_used"]) if row else 0
 
+    # --- промокоди -------------------------------------------------------
     def get_active_promo(self, user_id: int) -> dict | None:
         with self.lock:
             return self._one(f"SELECT {_sel(PROMO_COLS)} FROM promos WHERE user_id=? AND expires_at>?",
                              (user_id, int(time.time())), PROMO_COLS)
 
     def spin(self, user_id: int, code: str) -> tuple[str, dict | None]:
+        """Атомарно: перевіряє спроби, списує одну і створює промокод на 24 години.
+        Якщо в користувача вже є активний промокод — новий виграш ЗАМІНЮЄ його."""
         now = int(time.time())
         with self.tx():
             self.conn.execute(
@@ -337,13 +469,16 @@ class Database:
                              ("spins_total", "spins_used"))
             if user["spins_total"] - user["spins_used"] < 1:
                 return "no_attempts", None
-            self.conn.execute("UPDATE users SET spins_used=spins_used+1 WHERE user_id=?", (user_id,))
+            self.conn.execute("UPDATE users SET spins_used=spins_used+1 WHERE user_id=? AND spins_total-spins_used>=1",
+                              (user_id,))   # подвійний захист: використаних ніколи не більше, ніж нараховано
             self.conn.execute(
                 "INSERT OR REPLACE INTO promos(user_id, code, issued_at, expires_at, reminded) VALUES (?,?,?,?,0)",
                 (user_id, code, now, now + PROMO_TTL))
             return "ok", {"user_id": user_id, "code": code, "issued_at": now, "expires_at": now + PROMO_TTL}
 
     def delete_promo(self, user_id: int, expires_at: int | None = None) -> bool:
+        """Видаляє промокод. Якщо вказано expires_at — лише той самий (щоб старий таймер
+        не видалив новий промокод). True — якщо щось було видалено."""
         with self.tx():
             if expires_at is None:
                 existed = self.conn.execute("SELECT 1 FROM promos WHERE user_id=?", (user_id,)).fetchone()
@@ -362,6 +497,7 @@ class Database:
         with self.lock:
             return self._all(f"SELECT {_sel(PROMO_COLS)} FROM promos", (), PROMO_COLS)
 
+    # --- кошик -----------------------------------------------------------
     def set_cart(self, user_id: int, count: int) -> None:
         with self.tx():
             if count > 0:
@@ -378,8 +514,11 @@ class Database:
         with self.lock:
             return self._all(f"SELECT {_sel(CART_COLS)} FROM carts", (), CART_COLS)
 
+    # --- замовлення ------------------------------------------------------
     def consume_order(self, user_id: int, payload: str, total: int, promo_code: str | None,
                       details: str = "") -> tuple[int, int]:
+        """Зберігає замовлення і В ТІЙ САМІЙ ТРАНЗАКЦІЇ видаляє промокод та кошик.
+        Повертає (id замовлення, час створення)."""
         now = int(time.time())
         with self.tx():
             self.conn.execute(
@@ -390,6 +529,46 @@ class Database:
             self.conn.execute("DELETE FROM carts WHERE user_id=?", (user_id,))
             return int(order_id), now
 
+    # --- каталог товарів -------------------------------------------------
+    def seed_products(self, items: list[dict]) -> int:
+        """Наповнює каталог, лише якщо таблиця порожня. Повертає кількість доданих товарів."""
+        with self.tx():
+            if self.conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]:
+                return 0
+            for p in items:
+                self.conn.execute(
+                    'INSERT INTO products(id, name, price, "desc", img, emoji, available) VALUES (?,?,?,?,?,?,1)',
+                    (p["id"], p["name"], int(p["price"]), p.get("desc", ""), p.get("img", ""), p.get("emoji", "🛍")))
+            return len(items)
+
+    def list_products(self) -> list[dict]:
+        with self.lock:
+            return self._all(f"SELECT {_sel(PRODUCT_COLS)} FROM products ORDER BY rowid", (), PRODUCT_COLS)
+
+    def get_products_map(self) -> dict[str, dict]:
+        return {p["id"]: p for p in self.list_products()}
+
+    def get_product(self, product_id: str) -> dict | None:
+        with self.lock:
+            return self._one(f"SELECT {_sel(PRODUCT_COLS)} FROM products WHERE id=?", (product_id,), PRODUCT_COLS)
+
+    def toggle_product(self, product_id: str) -> bool | None:
+        """Перемикає наявність. Повертає нове значення (True — є в наявності) або None, якщо товару немає."""
+        with self.tx():
+            row = self._one("SELECT available FROM products WHERE id=?", (product_id,), ("available",))
+            if not row:
+                return None
+            new_value = 0 if row["available"] else 1
+            self.conn.execute("UPDATE products SET available=? WHERE id=?", (new_value, product_id))
+            return bool(new_value)
+
+    def set_price(self, product_id: str, price: int) -> bool:
+        with self.tx():
+            if not self.conn.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone():
+                return False
+            self.conn.execute("UPDATE products SET price=? WHERE id=?", (int(price), product_id))
+            return True
+
     def get_order(self, order_id: int) -> dict | None:
         with self.lock:
             return self._one(f"SELECT {_sel(ORDER_COLS)} FROM orders WHERE id=?", (int(order_id),), ORDER_COLS)
@@ -399,20 +578,28 @@ class Database:
             self.conn.execute("UPDATE orders SET ttn=? WHERE id=?", (ttn, int(order_id)))
 
     def user_has_ttn(self, user_id: int, ttn: str) -> bool:
+        """Чи належить ця ТТН замовленню користувача (щоб не відстежувати чужі посилки)."""
         with self.lock:
             return self.conn.execute("SELECT 1 FROM orders WHERE user_id=? AND ttn=? LIMIT 1",
                                      (user_id, ttn)).fetchone() is not None
 
     def get_user_orders(self, user_id: int, limit: int = 20) -> list[dict]:
+        """Історія замовлень користувача: від нових до старих."""
         with self.lock:
             return self._all(
                 f"SELECT {_sel(ORDER_COLS)} FROM orders WHERE user_id=? ORDER BY created_at DESC, id DESC LIMIT ?",
                 (user_id, int(limit)), ORDER_COLS)
 
+
 async def dbrun(fn, *args):
+    """Виконує метод БД в окремому потоці бази (fn — метод екземпляра Database)."""
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(fn.__self__.executor, fn, *args)
 
+
+# ----------------------------------------------------------------------
+# Таймери (asyncio.create_task): згорання промокоду та нагадування про кошик
+# ----------------------------------------------------------------------
 class Scheduler:
     def __init__(self, bot: Bot, db: Database) -> None:
         self.bot = bot
@@ -420,6 +607,7 @@ class Scheduler:
         self.expiry: dict[int, asyncio.Task] = {}
         self.reminders: dict[int, asyncio.Task] = {}
 
+    # --- 24 години: видалити промокод ------------------------------------
     def schedule_expiry(self, user_id: int, expires_at: int) -> None:
         old = self.expiry.pop(user_id, None)
         if old:
@@ -441,6 +629,7 @@ class Scheduler:
             if self.expiry.get(user_id) is asyncio.current_task():
                 self.expiry.pop(user_id, None)
 
+    # --- 30 хвилин: нагадати про кошик -----------------------------------
     def schedule_reminder(self, user_id: int, delay: float = REMINDER_DELAY) -> None:
         self.cancel_reminder(user_id)
         self.reminders[user_id] = asyncio.create_task(self._reminder_worker(user_id, delay))
@@ -461,18 +650,21 @@ class Scheduler:
             await asyncio.sleep(max(0, delay))
             promo = await dbrun(self.db.get_active_promo, user_id)
             cart = await dbrun(self.db.get_cart, user_id)
+            # нагадуємо лише якщо: промокод ще діє, товари в кошику є і ми ще не нагадували
             if not promo or promo["reminded"] or not cart or cart["item_count"] < 1:
                 return
             user = await dbrun(self.db.get_user, user_id)
+            # Ім'я береться як є (у Telegram воно в називному відмінку; автоматично
+            # відмінювати «Владислав» → «Владиславе» не вийде).
             name = esc(user["first_name"]) if user and user["first_name"] else "Друже"
             left = human_left(promo["expires_at"] - time.time())
             text = (
                 f"{name}, ми помітили, що ви залишили товари у кошику. 🛍\n"
                 f"Нагадуємо, що ваш промокод <b>{esc(promo['code'])}</b> діє ще <b>{left}</b>!\n\n"
-                "Завершити замовлення можна кнопкою внизу 👇"
+                f"Щоб завершити замовлення, натисніть «{WEBAPP_BUTTON_TEXT}» внизу 👇"
             )
-            await self.bot.send_message(user_id, text,
-                                        reply_markup=webapp_keyboard(user_id, "🛍 Завершити замовлення"))
+            # Кнопка — у reply-клавіатурі (з незмінним текстом), щоб sendData() спрацював після відкриття
+            await self.bot.send_message(user_id, text, reply_markup=webapp_keyboard(user_id))
             await dbrun(self.db.mark_reminded, user_id)
             log.info("Надіслано нагадування про кошик користувачу %s", user_id)
         except asyncio.CancelledError:
@@ -487,6 +679,7 @@ class Scheduler:
             if self.reminders.get(user_id) is asyncio.current_task():
                 self.reminders.pop(user_id, None)
 
+    # --- після перезапуску бота відновлюємо таймери з бази ---------------
     async def restore(self) -> None:
         now = time.time()
         promos = await dbrun(self.db.list_promos)
@@ -504,26 +697,42 @@ class Scheduler:
                 self.schedule_reminder(cart["user_id"], cart["updated_at"] + REMINDER_DELAY - now)
         log.info("Відновлено таймерів: промокодів %s", len(active))
 
+
+# ----------------------------------------------------------------------
+# Розрахунок замовлення (ті самі правила, що у фронтенді)
+# ----------------------------------------------------------------------
 def calculate(items: list[dict], promo: str | None) -> dict:
     units = sorted((it["price"] for it in items for _ in range(it["qty"])), reverse=True)
     subtotal = sum(units)
     discount = 0
     if promo == "VAD10":
-        discount = (subtotal * 10 + 50) // 100
+        discount = (subtotal * 10 + 50) // 100              # −10%, округлення вгору від .5
     elif promo == "3FOR2":
-        discount = sum(units[2::3])
+        discount = sum(units[2::3])                         # кожна 3-тя (найдешевша в трійці) безкоштовна
     elif promo == "SECOND20" and len(units) >= 2:
-        discount = (units[1] * 20 + 50) // 100
+        discount = (units[1] * 20 + 50) // 100              # −20% на другу за вартістю одиницю
     free_ship = promo == "FREESHIP600" and subtotal >= FREE_SHIP_FROM
     return {
         "subtotal": subtotal, "discount": discount,
         "free_ship": free_ship, "total": subtotal - discount, "units": len(units),
     }
 
+
 def clean_text(value: object, limit: int = 100) -> str:
     return " ".join(str(value or "").split())[:limit]
 
-def parse_order(raw: str, promo: str | None) -> dict:
+
+class OutOfStockError(ValueError):
+    """У замовленні є товар, якого немає в наявності (available = 0) або якого немає в каталозі."""
+
+    def __init__(self, names: list[str]) -> None:
+        super().__init__("out of stock: " + ", ".join(names))
+        self.names = names
+
+
+def parse_order(raw: str, promo: str | None, products: dict[str, dict]) -> dict:
+    """Перевіряє JSON з Mini App. Ціни та промокод беруться ЗІ СВОГО боку (каталог і база),
+    значення з JSON використовуються лише як довідкові."""
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -539,25 +748,29 @@ def parse_order(raw: str, promo: str | None) -> dict:
     if not (name and city and branch and sum(c.isdigit() for c in phone) >= 10):
         raise ValueError("Не всі дані клієнта заповнені")
 
-    items = []
+    items, unavailable = [], []
     for entry in data.get("items") or []:
         if not isinstance(entry, dict):
             continue
-        pid = str(entry.get("id"))
-        product = CATALOG.get(pid)
         try:
             qty = int(entry.get("q", 0))
         except (TypeError, ValueError):
             continue
-        if product and qty >= 1:
-            # Перевірка наявності товару
-            if not product.get("available", True):
-                raise ValueError(f"Товар «{product['name']}» наразі відсутній у наявності.")
+        if qty < 1:
+            continue
+        product = products.get(str(entry.get("id")))          # ціна й наявність — ЛИШЕ з бази
+        if not product:
+            unavailable.append("товар, якого вже немає в каталозі")
+        elif not product["available"]:
+            unavailable.append(product["name"])
+        else:
             qty = min(qty, MAX_QTY)
             items.append({"name": product["name"], "price": product["price"], "qty": qty,
                           "sum": product["price"] * qty})
+    if unavailable:                                             # замовлення блокується повністю
+        raise OutOfStockError(list(dict.fromkeys(unavailable)))
     if not items:
-        raise ValueError("Порожній кошик або всі товари відсутні у наявності")
+        raise ValueError("Порожній кошик")
 
     payment = data.get("payment") if data.get("payment") in PAYMENTS else "cod"
     calc = calculate(items, promo)
@@ -569,7 +782,9 @@ def parse_order(raw: str, promo: str | None) -> dict:
         **calc,
     }
 
-def order_view(row: dict) -> dict:
+
+def order_view(row: dict, products: dict | None = None) -> dict:
+    """Замовлення з БД → зручний для Mini App / чату вигляд."""
     details = None
     if row.get("details"):
         try:
@@ -581,11 +796,11 @@ def order_view(row: dict) -> dict:
         items = [{"name": str(i.get("name", "")), "qty": int(i.get("qty", 1)), "sum": int(i.get("sum", 0))}
                  for i in details.get("items", [])]
         payment = details.get("payment", "cod")
-    else:
+    else:  # старі замовлення без details: відновлюємо з вихідного JSON
         try:
             data = json.loads(row["payload"])
             for entry in data.get("items", []):
-                product = CATALOG.get(str(entry.get("id")))
+                product = (products or {}).get(str(entry.get("id")))
                 qty = max(1, min(int(entry.get("q", 1)), MAX_QTY))
                 if product:
                     items.append({"name": product["name"], "qty": qty, "sum": product["price"] * qty})
@@ -601,10 +816,15 @@ def order_view(row: dict) -> dict:
         "ttn": row.get("ttn") or None,
     }
 
+
+# ----------------------------------------------------------------------
+# Нова Пошта: відстеження посилки за ТТН (метод getStatusDocuments)
+# ----------------------------------------------------------------------
 NP_URL = "https://api.novaposhta.ua/v2.0/json/"
-NP_CACHE_TTL = 60
+NP_CACHE_TTL = 60                      # секунд: не смикаємо API Нової Пошти частіше за раз на хвилину на ТТН
 _np_cache: dict[str, tuple[float, dict]] = {}
 
+# Код статусу Нової Пошти -> (емодзі, зрозумілий текст). Невідомий код — показуємо текст самої Нової Пошти.
 NP_STATUS = {
     "1":   ("🕐", "Очікує надходження від відправника"),
     "3":   ("❓", "ТТН ще не з’явилась у системі Нової Пошти"),
@@ -624,7 +844,9 @@ NP_STATUS = {
 }
 NP_RECEIVED = {"9", "10", "11"}
 
+
 def _np_date(value: object) -> str:
+    """'30-12-2026 15:20:00' або '2026-12-30 15:20:00' -> '30.12.2026'."""
     text = str(value or "")
     m = re.match(r"(\d{2})[-.](\d{2})[-.](\d{4})", text)
     if m:
@@ -632,7 +854,9 @@ def _np_date(value: object) -> str:
     m = re.match(r"(\d{4})-(\d{2})-(\d{2})", text)
     return f"{m.group(3)}.{m.group(2)}.{m.group(1)}" if m else ""
 
+
 def parse_np_response(data: object) -> dict:
+    """Розбирає відповідь getStatusDocuments у короткий словник для Mini App."""
     if not isinstance(data, dict) or not data.get("success"):
         return {"ok": False, "error": "np_error"}
     rows = data.get("data") or []
@@ -653,7 +877,9 @@ def parse_np_response(data: object) -> dict:
         "delivery_date": date,
     }
 
+
 async def np_track(ttn: str) -> dict:
+    """Запитує статус посилки в Нової Пошти. Результат кешується на хвилину."""
     now = time.time()
     cached = _np_cache.get(ttn)
     if cached and now - cached[0] < NP_CACHE_TTL:
@@ -680,11 +906,15 @@ async def np_track(ttn: str) -> dict:
         log.warning("Нова Пошта повернула помилку для ТТН %s: %s", ttn, str(data)[:300])
     return result
 
+
 TTN_RE = re.compile(r"\d{10,14}")
 
+
 def parse_order_ref(ref: str) -> int | None:
+    """'VD-1310-5' або '5' -> 5 (id замовлення)."""
     m = re.fullmatch(r"(?:VD-\d{4}-)?(\d{1,9})", ref.strip(), flags=re.IGNORECASE)
     return int(m.group(1)) if m else None
+
 
 def promo_notes(order: dict) -> list[str]:
     promo = order["promo"]
@@ -709,6 +939,7 @@ def promo_notes(order: dict) -> list[str]:
     if isinstance(order["client_total"], (int, float)) and order["client_total"] != order["total"]:
         notes.append(f"⚠️ Сума в Mini App ({money(int(order['client_total']))}) відрізняється від розрахованої.")
     return notes
+
 
 def admin_text(order: dict, order_no: str, message: Message) -> str:
     user = message.from_user
@@ -745,6 +976,7 @@ def admin_text(order: dict, order_no: str, message: Message) -> str:
         lines += [""] + notes
     return "\n".join(lines)
 
+
 def client_text(order: dict, order_no: str) -> str:
     c = order["customer"]
     total = order["total"]
@@ -773,17 +1005,27 @@ def client_text(order: dict, order_no: str) -> str:
         text += "\n💎 Подарункова прикраса Vivienne Westwood вже чекає вас у посилці!\n"
     return text + "\nМенеджер зв'яжеться з вами найближчим часом. 💜"
 
+
+# ----------------------------------------------------------------------
+# Реферали
+# ----------------------------------------------------------------------
 def parse_ref(payload: str | None) -> int | None:
+    """Приймає 'ref_123456', 'ref=123456' або просто '123456'."""
     if not payload:
         return None
     m = re.fullmatch(r"(?:ref[_=-]?)?(\d{4,15})", payload.strip())
     return int(m.group(1)) if m else None
 
+
+# ----------------------------------------------------------------------
+# Обробники повідомлень
+# ----------------------------------------------------------------------
 @router.message(CommandStart())
 async def cmd_start(message: Message, command: CommandObject, bot: Bot, db: Database) -> None:
     user = message.from_user
     is_new = await dbrun(db.upsert_user, user.id, user.first_name or "", user.username)
 
+    # Реферальний хвіст: t.me/<бот>?start=ref_123456
     ref = parse_ref(command.args)
     if is_new and ref:
         if await dbrun(db.apply_referral, user.id, ref):
@@ -805,6 +1047,7 @@ async def cmd_start(message: Message, command: CommandObject, bot: Bot, db: Data
         reply_markup=webapp_keyboard(user.id),
     )
 
+
 @router.message(Command("invite"))
 async def cmd_invite(message: Message, bot: Bot) -> None:
     me = await bot.me()
@@ -813,8 +1056,10 @@ async def cmd_invite(message: Message, bot: Bot) -> None:
         "🎁 <b>Запросіть друга</b> — коли він відкриє бота вперше, ви отримаєте +1 спробу колеса.\n\n"
         f"Ваше посилання:\n{link}")
 
+
 @router.message(Command("give"), F.from_user.id == ADMIN_ID)
 async def cmd_give(message: Message, command: CommandObject, bot: Bot, db: Database) -> None:
+    """Адмін видає прокрути:  /give <ID або @username> [кількість]   (за замовчуванням 1; мінус — забрати)."""
     parts = (command.args or "").split()
     if not parts:
         await message.answer(
@@ -852,15 +1097,18 @@ async def cmd_give(message: Message, command: CommandObject, bot: Bot, db: Datab
             report += "\n⚠️ Повідомити користувача не вдалося (можливо, він заблокував бота), але спроби нараховано."
     await message.answer(report)
 
+
 @router.message(Command("myorders"))
 async def cmd_myorders(message: Message, db: Database) -> None:
+    """Користувач дивиться свої останні замовлення прямо в чаті."""
     rows = await dbrun(db.get_user_orders, message.from_user.id, 5)
+    products = await dbrun(db.get_products_map)
     if not rows:
         await message.answer("🧾 У вас поки немає замовлень.\nВідкрийте магазин кнопкою внизу — і оформіть перше!")
         return
     blocks = []
     for row in rows:
-        o = order_view(row)
+        o = order_view(row, products)
         items = "\n".join(f"• {esc(i['name'])} × {i['qty']}" for i in o["items"]) or "• —"
         promo = f"\n🎟 {esc(o['promo'])}" if o["promo"] else ""
         ttn = f"\n📦 ТТН: <code>{esc(o['ttn'])}</code>" if o.get("ttn") else ""
@@ -868,8 +1116,10 @@ async def cmd_myorders(message: Message, db: Database) -> None:
                       f"Разом: <b>{money(o['total'])}</b> · {esc(o['payment_short'])}")
     await message.answer("🧾 <b>Ваші останні замовлення</b>\n\n" + "\n\n".join(blocks))
 
+
 @router.message(Command("setttn"), F.from_user.id == ADMIN_ID)
 async def cmd_setttn(message: Message, command: CommandObject, bot: Bot, db: Database) -> None:
+    """Адмін зберігає ТТН і клієнт одразу отримує сповіщення:  /setttn <номер замовлення або id> <ТТН>"""
     parts = (command.args or "").split()
     if len(parts) != 2:
         await message.answer(
@@ -904,15 +1154,85 @@ async def cmd_setttn(message: Message, command: CommandObject, bot: Bot, db: Dat
         await bot.send_message(
             order["user_id"],
             f"{head}\nТТН: <code>{ttn}</code>\n"
-            "Відстежуйте статус у розділі «Мої замовлення».",
-            reply_markup=webapp_keyboard(order["user_id"], "🛍 Відкрити vadrine", open="catalog_keyboard"))
+            "Відстежуйте статус у розділі «Мої замовлення»: відкрийте магазин кнопкою внизу "
+            "й натисніть іконку чека.",
+            reply_markup=webapp_keyboard(order["user_id"]))
         report += "\nКлієнту надіслано сповіщення."
     except TelegramAPIError:
         report += "\n⚠️ Сповістити клієнта не вдалося (можливо, він заблокував бота), але ТТН збережено."
     await message.answer(report)
 
+
+def product_line(p: dict) -> str:
+    mark = "✅" if p["available"] else "❌"
+    return f"{mark} <code>{esc(p['id'])}</code> — {esc(p['name'])} — {money(p['price'])}"
+
+
+@router.message(Command("products"), F.from_user.id == ADMIN_ID)
+async def cmd_products(message: Message, db: Database) -> None:
+    """Адмін бачить каталог з id товарів (вони потрібні для наступних команд)."""
+    items = await dbrun(db.list_products)
+    if not items:
+        await message.answer("Каталог порожній.")
+        return
+    await message.answer(
+        "🛍 <b>Каталог</b>\n" + "\n".join(product_line(p) for p in items) + "\n\n"
+        "✅ є в наявності · ❌ немає\n"
+        "<code>/toggleproduct id</code> — змінити наявність\n"
+        "<code>/setprice id ціна</code> — змінити ціну\n"
+        "<code>/setimg id посилання</code> — змінити фото")
+
+
+@router.message(Command("toggleproduct"), F.from_user.id == ADMIN_ID)
+async def cmd_toggleproduct(message: Message, command: CommandObject, db: Database) -> None:
+    """Вмикає/вимикає наявність товару:  /toggleproduct <id>"""
+    parts = (command.args or "").split()
+    if len(parts) != 1:
+        await message.answer("Використання: <code>/toggleproduct id</code>\nСписок id: /products")
+        return
+    state = await dbrun(db.toggle_product, parts[0])
+    if state is None:
+        await message.answer("Товар не знайдено. Список id: /products")
+        return
+    product = await dbrun(db.get_product, parts[0])
+    await message.answer(
+        f"{'✅ Тепер є в наявності' if state else '❌ Тепер немає в наявності'}: <b>{esc(product['name'])}</b>\n"
+        "У Mini App зміна з'явиться за хвилину (або після повторного відкриття).")
+
+
+@router.message(Command("setimg"), F.from_user.id == ADMIN_ID)
+async def cmd_setimg(message: Message, command: CommandObject, db: Database) -> None:
+    """Змінює фото товару:  /setimg <id> <https://посилання або images/файл.jpg>"""
+    parts = (command.args or "").split()
+    if len(parts) != 2 or not re.fullmatch(r"(https://\S+|images/\S+)", parts[1]):
+        await message.answer("Використання: <code>/setimg id посилання</code>\n"
+                             "Посилання — https://… або шлях у репозиторії, напр. <code>images/watch.jpg</code>")
+        return
+    if not await dbrun(db.set_img, parts[0], parts[1]):
+        await message.answer("Товар не знайдено. Список id: /products")
+        return
+    product = await dbrun(db.get_product, parts[0])
+    await message.answer(f"✅ Фото змінено: <b>{esc(product['name'])}</b>")
+
+
+@router.message(Command("setprice"), F.from_user.id == ADMIN_ID)
+async def cmd_setprice(message: Message, command: CommandObject, db: Database) -> None:
+    """Змінює ціну товару:  /setprice <id> <ціна>"""
+    parts = (command.args or "").split()
+    if len(parts) != 2 or not re.fullmatch(r"\d{1,7}", parts[1]) or int(parts[1]) < 1:
+        await message.answer("Використання: <code>/setprice id ціна</code>, напр. <code>/setprice bag 2590</code>")
+        return
+    if not await dbrun(db.set_price, parts[0], int(parts[1])):
+        await message.answer("Товар не знайдено. Список id: /products")
+        return
+    product = await dbrun(db.get_product, parts[0])
+    await message.answer(f"✅ Ціну змінено: <b>{esc(product['name'])}</b> — {money(product['price'])}\n"
+                         "Нові замовлення рахуються за новою ціною одразу.")
+
+
 @router.message(Command("giveall"), F.from_user.id == ADMIN_ID)
 async def cmd_giveall(message: Message, command: CommandObject, db: Database) -> None:
+    """Акція: додати спроби ВСІМ користувачам:  /giveall <кількість>"""
     try:
         amount = int((command.args or "").split()[0])
     except (ValueError, IndexError):
@@ -925,8 +1245,10 @@ async def cmd_giveall(message: Message, command: CommandObject, db: Database) ->
     await message.answer(f"✅ Нараховано {amount:+d} {plural(abs(amount), 'спробу', 'спроби', 'спроб')} "
                          f"усім користувачам: <b>{count}</b>.\nПобачать нове значення, коли заново відкриють Mini App.")
 
+
 @router.message(Command("spins"), F.from_user.id == ADMIN_ID)
 async def cmd_spins(message: Message, command: CommandObject, db: Database) -> None:
+    """Адмін дивиться стан користувача:  /spins <ID або @username>"""
     if not command.args:
         await message.answer("Використання: <code>/spins 123456789</code> або <code>/spins @username</code>")
         return
@@ -944,28 +1266,49 @@ async def cmd_spins(message: Message, command: CommandObject, db: Database) -> N
         f"Запросив друзів: {user['referrals']}\n"
         f"Активний промокод: {promo_line}")
 
+
 @router.message(Command("backup"), F.from_user.id == ADMIN_ID)
 async def cmd_backup(message: Message, db: Database) -> None:
-    if db.remote:
-        await message.answer("☁️ База в хмарі Turso — окрема резервна копія не потрібна.")
-        return
-    await message.answer_document(FSInputFile(db.path), caption="Резервна копія бази vadrine")
+    """Лише для адміна: надсилає свіжу копію бази vadrine.db (страховка на безкоштовному Render)."""
+    path = os.path.join(tempfile.gettempdir(), "vadrine_backup.db")
+    await dbrun(db.snapshot, path)                       # цілісна копія, а не «сирий» файл із WAL
+    try:
+        await message.answer_document(FSInputFile(path, filename="vadrine.db"),
+                                      caption="💾 Резервна копія бази vadrine")
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
 
 @router.message(F.web_app_data)
 async def on_web_app_data(message: Message, bot: Bot, db: Database, scheduler: Scheduler) -> None:
     user = message.from_user
     await dbrun(db.upsert_user, user.id, user.first_name or "", user.username)
 
+    # Промокод беремо з БАЗИ, а не з JSON — клієнт не може підробити знижку
     promo_row = await dbrun(db.get_active_promo, user.id)
     promo = promo_row["code"] if promo_row else None
 
+    products = await dbrun(db.get_products_map)          # актуальні ціни й наявність із бази
     try:
-        order = parse_order(message.web_app_data.data, promo)
+        order = parse_order(message.web_app_data.data, promo, products)
+    except OutOfStockError as exc:
+        # Замовлення НЕ оформлюється, промокод і спроби лишаються недоторканими
+        names = ", ".join(esc(n) for n in exc.names)
+        log.info("Замовлення від %s заблоковано, немає в наявності: %s", user.id, ", ".join(exc.names))
+        await message.answer(
+            f"😕 На жаль, зараз немає в наявності: <b>{names}</b>.\n"
+            "Відкрийте магазин, зберіть кошик без цього товару й оформіть замовлення ще раз.",
+            reply_markup=webapp_keyboard(user.id))
+        return
     except ValueError as exc:
         log.warning("Невалідне замовлення від %s: %s", user.id, exc)
-        await message.answer(f"😕 Не вдалося обробити замовлення: {exc}\nВідкрийте магазин і спробуйте ще раз.")
+        await message.answer("😕 Не вдалося обробити замовлення. Відкрийте магазин і спробуйте ще раз.")
         return
 
+    # Зберігаємо замовлення і ОДРАЗУ видаляємо промокод та кошик (одна транзакція)
     details = json.dumps({
         "items": [{"name": it["name"], "qty": it["qty"], "price": it["price"], "sum": it["sum"]} for it in order["items"]],
         "payment": order["payment"], "subtotal": order["subtotal"], "discount": order["discount"],
@@ -973,7 +1316,7 @@ async def on_web_app_data(message: Message, bot: Bot, db: Database, scheduler: S
     }, ensure_ascii=False)
     order_id, created_at = await dbrun(db.consume_order, user.id, message.web_app_data.data,
                                        order["total"], promo, details)
-    scheduler.cancel_all(user.id)
+    scheduler.cancel_all(user.id)  # таймери згорання і нагадування більше не потрібні
     order_no = order_number(order_id, created_at)
     log.info("Замовлення %s від %s на %s ₴, промокод %s видалено", order_no, user.id, order["total"], promo)
 
@@ -984,12 +1327,18 @@ async def on_web_app_data(message: Message, bot: Bot, db: Database, scheduler: S
 
     await message.answer(client_text(order, order_no), reply_markup=webapp_keyboard(user.id))
 
+
+# ----------------------------------------------------------------------
+# HTTP-API для Mini App (працює в одному процесі з ботом)
+# ----------------------------------------------------------------------
 def webapp_origin() -> str:
     p = urlparse(WEBAPP_URL)
     return f"{p.scheme}://{p.netloc}"
 
+
 @web.middleware
 async def cors_middleware(request: web.Request, handler):
+    """Дозволяє запити лише з вашого сайту на GitHub Pages."""
     if request.method == "OPTIONS":
         response: web.StreamResponse = web.Response(status=204)
     else:
@@ -1005,6 +1354,7 @@ async def cors_middleware(request: web.Request, handler):
         response.headers["Vary"] = "Origin"
     return response
 
+
 def auth_user(uid_raw, sig) -> int:
     try:
         uid = int(uid_raw)
@@ -1013,6 +1363,7 @@ def auth_user(uid_raw, sig) -> int:
     if not check_sig(uid, sig):
         raise web.HTTPForbidden(text="bad signature")
     return uid
+
 
 async def read_json(request: web.Request) -> dict:
     try:
@@ -1023,6 +1374,7 @@ async def read_json(request: web.Request) -> dict:
         raise web.HTTPBadRequest(text="bad json")
     return data
 
+
 async def state_payload(db: Database, uid: int) -> dict:
     attempts = await dbrun(db.attempts_left, uid)
     promo = await dbrun(db.get_active_promo, uid)
@@ -1032,8 +1384,10 @@ async def state_payload(db: Database, uid: int) -> dict:
         "prize": {"code": promo["code"], "remaining": promo["expires_at"] - int(time.time())} if promo else None,
     }
 
+
 async def api_health(_: web.Request) -> web.Response:
     return web.Response(text="ok")
+
 
 async def api_state(request: web.Request) -> web.Response:
     db: Database = request.app["db"]
@@ -1041,13 +1395,6 @@ async def api_state(request: web.Request) -> web.Response:
     await dbrun(db.ensure_user, uid)
     return web.json_response(await state_payload(db, uid))
 
-async def api_products(_: web.Request) -> web.Response:
-    """Новий ендпоінт для передачі актуальної наявності товарів."""
-    prods = [
-        {"id": k, "name": v["name"], "price": v["price"], "available": v.get("available", True)}
-        for k, v in CATALOG.items()
-    ]
-    return web.json_response({"ok": True, "products": prods})
 
 async def api_spin(request: web.Request) -> web.Response:
     db: Database = request.app["db"]
@@ -1055,11 +1402,12 @@ async def api_spin(request: web.Request) -> web.Response:
     data = await read_json(request)
     uid = auth_user(data.get("uid"), data.get("sig"))
 
+    # Приз обирає СЕРВЕР за вагами — клієнт на результат вплинути не може
     code = random.choices(list(PRIZES), weights=[p["weight"] for p in PRIZES.values()])[0]
     status, promo = await dbrun(db.spin, uid, code)
 
     if status == "ok":
-        scheduler.schedule_expiry(uid, promo["expires_at"])
+        scheduler.schedule_expiry(uid, promo["expires_at"])  # через 24 год промокод буде видалено
         log.info("Користувач %s виграв %s", uid, code)
         payload = await state_payload(db, uid)
         payload["code"] = promo["code"]
@@ -1067,16 +1415,21 @@ async def api_spin(request: web.Request) -> web.Response:
         return web.json_response(payload)
 
     payload = await state_payload(db, uid)
-    payload.update(ok=False, error=status)
+    payload.update(ok=False, error=status)  # 'no_attempts' або 'active_promo'
     return web.json_response(payload)
 
+
 async def api_orders(request: web.Request) -> web.Response:
+    """Історія замовлень користувача для Mini App (від нових до старих)."""
     db: Database = request.app["db"]
     uid = auth_user(request.query.get("uid"), request.query.get("sig"))
     rows = await dbrun(db.get_user_orders, uid, 20)
-    return web.json_response({"ok": True, "orders": [order_view(r) for r in rows]})
+    products = await dbrun(db.get_products_map)
+    return web.json_response({"ok": True, "orders": [order_view(r, products) for r in rows]})
+
 
 async def api_track(request: web.Request) -> web.Response:
+    """Статус посилки Нової Пошти для Mini App. Відстежувати можна лише ТТН зі СВОЇХ замовлень."""
     db: Database = request.app["db"]
     uid = auth_user(request.query.get("uid"), request.query.get("sig"))
     ttn = re.sub(r"\s+", "", request.query.get("ttn", ""))
@@ -1086,7 +1439,17 @@ async def api_track(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "unknown_ttn"}, status=404)
     return web.json_response(await np_track(ttn))
 
+
+async def api_products(request: web.Request) -> web.Response:
+    """Публічний каталог для Mini App: актуальні товари, ціни й наявність прямо з бази."""
+    db: Database = request.app["db"]
+    items = await dbrun(db.list_products)
+    products = [{**p, "available": bool(p["available"])} for p in items]
+    return web.json_response({"ok": True, "products": products}, headers={"Cache-Control": "no-store"})
+
+
 async def api_cart(request: web.Request) -> web.Response:
+    """Mini App повідомляє, скільки товарів у кошику — від цього залежить нагадування."""
     db: Database = request.app["db"]
     scheduler: Scheduler = request.app["scheduler"]
     data = await read_json(request)
@@ -1099,48 +1462,64 @@ async def api_cart(request: web.Request) -> web.Response:
     await dbrun(db.set_cart, uid, count)
     promo = await dbrun(db.get_active_promo, uid)
     if count > 0 and promo and not promo["reminded"]:
-        scheduler.schedule_reminder(uid)
+        scheduler.schedule_reminder(uid)   # (пере)запускаємо відлік 30 хвилин
     else:
-        scheduler.cancel_reminder(uid)
+        scheduler.cancel_reminder(uid)     # кошик порожній / нагадування вже було / промокоду немає
     return web.json_response({"ok": True})
+
 
 async def start_http_server(db: Database, scheduler: Scheduler) -> web.AppRunner:
     app = web.Application(middlewares=[cors_middleware])
     app["db"], app["scheduler"] = db, scheduler
-    app.router.add_get("/", api_health)
+    app.router.add_get("/", api_health)          # для Render і UptimeRobot
     app.router.add_get("/health", api_health)
     app.router.add_get("/api/state", api_state)
-    app.router.add_get("/api/products", api_products)
     app.router.add_get("/api/orders", api_orders)
     app.router.add_get("/api/track", api_track)
+    app.router.add_get("/api/products", api_products)
     app.router.add_post("/api/spin", api_spin)
     app.router.add_post("/api/cart", api_cart)
     runner = web.AppRunner(app)
     await runner.setup()
-    port = int(os.getenv("PORT", "10000"))
+    port = int(os.getenv("PORT", "10000"))        # Render сам задає PORT
     await web.TCPSite(runner, "0.0.0.0", port).start()
-    log.info("HTTP-сервер слухає порт %s", port)
+    log.info("HTTP-сервер слухає порт %s (API для Mini App: %s)", port, PUBLIC_URL or "PUBLIC_URL не задано!")
     return runner
 
+
+# ----------------------------------------------------------------------
 async def main() -> None:
     if "ВСТАВТЕ" in BOT_TOKEN:
-        raise SystemExit("Вкажіть BOT_TOKEN")
+        raise SystemExit("Вкажіть BOT_TOKEN (змінна середовища або рядок у bot.py)")
+    if ADMIN_ID == 123456789:
+        log.warning("ADMIN_ID не змінено — замовлення не дійдуть до вас!")
+    if "ВАШ_НІК" in WEBAPP_URL:
+        log.warning("WEBAPP_URL не змінено — кнопка відкриватиме неіснуючу сторінку!")
+    if not PUBLIC_URL:
+        log.warning("PUBLIC_URL не задано — Mini App не зможе звʼязатися з сервером (працюватиме без бази)")
+
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     db = Database(DB_PATH)
     scheduler = Scheduler(bot, db)
+    log.info("База даних: локальний SQLite (%s)", os.path.abspath(DB_PATH))
+    if os.getenv("RENDER") and not os.path.abspath(DB_PATH).startswith("/var/data"):
+        log.warning("Render без постійного диска: vadrine.db зникне при перезапуску/деплої "
+                    "(спроби колеса й замовлення скинуться). Підключіть Render Disk і задайте DB_PATH=/var/data/vadrine.db")
 
-    dp = Dispatcher(db=db, scheduler=scheduler)
+    dp = Dispatcher(db=db, scheduler=scheduler)   # ці об'єкти потрапляють в обробники за іменем
     dp.include_router(router)
 
     await scheduler.restore()
     runner = await start_http_server(db, scheduler)
     try:
+        # pending-оновлення НЕ скидаємо: замовлення, надіслані поки бот спав, не втратяться
         await bot.delete_webhook(drop_pending_updates=False)
         log.info("Бот запущено")
         await dp.start_polling(bot)
     finally:
         await runner.cleanup()
         db.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
