@@ -140,12 +140,23 @@ SEED_PRODUCTS = [
 
 # Призи колеса. weight = шанс у % (сума 100).
 PRIZES = {
-    "VAD10":       {"title": "Знижка 10%",                             "weight": 30},
-    "FREESHIP600": {"title": "Безкоштовна доставка від 600 ₴",         "weight": 25},
-    "3FOR2":       {"title": "Акція «1+1=3»",                           "weight": 20},
-    "SECOND20":    {"title": "Знижка 20% на другий товар",             "weight": 20},
-    "WESTWOOD":    {"title": "Прикраса Vivienne Westwood у подарунок", "weight": 5},
+    "TRY_AGAIN":   {"title": "Без виграшу — спробуйте ще раз",                   "weight": 20},
+    "WESTWOOD":    {"title": "Безкоштовний кулон Vivienne Westwood у подарунок", "weight": 3},
+    "VAD10":       {"title": "Знижка 10%",                                       "weight": 30},
+    "SECOND20":    {"title": "Знижка 20% на другий товар",                       "weight": 25},
+    "VAD15":       {"title": "Знижка 15%",                                       "weight": 7},
+    "FREESHIP600": {"title": "Безкоштовна доставка від 600 ₴",                    "weight": 15},
 }
+assert sum(p["weight"] for p in PRIZES.values()) == 100, "Сума ваг призів колеса має дорівнювати 100"
+
+# TRY_AGAIN — «без виграшу»: спроба списується, але промокод НЕ видається і в таблицю promos нічого не пишеться.
+NO_PRIZE = "TRY_AGAIN"
+# Застарілі коди: промокоди, видані ДО оновлення колеса, діють до 24 год і мають коректно обраховуватись.
+LEGACY_PROMO_TITLES = {"3FOR2": "Акція «1+1=3» (архівна)"}
+
+
+def prize_title(code: str) -> str:
+    return PRIZES.get(code, {}).get("title") or LEGACY_PROMO_TITLES.get(code) or str(code)
 
 # Вартість доставки в суму замовлення НЕ входить: Нова Пошта бере її за своїм тарифом.
 # Приз FREESHIP600 означає, що відправлення (від суми нижче) оплачуєте ви.
@@ -378,6 +389,16 @@ class Database:
             self.execute("UPDATE products SET img=? WHERE id=?", (img, product_id))
             return True
 
+    def add_product(self, p: dict) -> bool:
+        """Додає новий товар (одразу в наявності). False — якщо товар з таким id уже є."""
+        with self.tx():
+            if self.execute("SELECT 1 FROM products WHERE id=?", (p["id"],)).fetchone():
+                return False
+            self.execute(
+                'INSERT INTO products(id, name, price, "desc", img, emoji, available) VALUES (?,?,?,?,?,?,1)',
+                (p["id"], p["name"], int(p["price"]), p.get("desc", ""), p.get("img", ""), p.get("emoji", "🛍")))
+            return True
+
     def close(self) -> None:
         def _close() -> None:
             with self.lock:
@@ -485,6 +506,9 @@ class Database:
                 return "no_attempts", None
             self.execute("UPDATE users SET spins_used=spins_used+1 WHERE user_id=? AND spins_total-spins_used>=1",
                          (user_id,))
+            if code == NO_PRIZE:
+                # «Без виграшу»: спробу списано, запис у promos НЕ додається (а наявний бонус лишається чинним)
+                return "ok", {"user_id": user_id, "code": code, "issued_at": now, "expires_at": None}
             self.execute(
                 "INSERT OR REPLACE INTO promos(user_id, code, issued_at, expires_at, reminded) VALUES (?,?,?,?,0)",
                 (user_id, code, now, now + PROMO_TTL))
@@ -709,12 +733,14 @@ def calculate(items: list[dict], promo: str | None) -> dict:
     subtotal = sum(units)
     discount = 0
     if promo == "VAD10":
-        discount = (subtotal * 10 + 50) // 100              # −10%, округлення вгору від .5
-    elif promo == "3FOR2":
+        discount = (subtotal * 10 + 50) // 100              # −10% від суми, округлення вгору від .5
+    elif promo == "VAD15":
+        discount = (subtotal * 15 + 50) // 100              # −15% від суми, округлення вгору від .5
+    elif promo == "3FOR2":                                  # АРХІВНИЙ приз: лише для вже виданих промокодів
         discount = sum(units[2::3])                         # кожна 3-тя (найдешевша в трійці) безкоштовна
     elif promo == "SECOND20" and len(units) >= 2:
         discount = (units[1] * 20 + 50) // 100              # −20% на другу за вартістю одиницю
-    free_ship = promo == "FREESHIP600" and subtotal >= FREE_SHIP_FROM
+    free_ship = promo == "FREESHIP600" and subtotal >= FREE_SHIP_FROM      # безкоштовна доставка від 600 ₴
     return {
         "subtotal": subtotal, "discount": discount,
         "free_ship": free_ship, "total": subtotal - discount, "units": len(units),
@@ -935,7 +961,7 @@ def promo_notes(order: dict) -> list[str]:
             notes.append(f"ℹ️ FREESHIP600 не спрацював: сума товарів менша за {money(FREE_SHIP_FROM)}. Доставку оплачує клієнт.")
     elif promo == "WESTWOOD":
         wish = f" Побажання клієнта: <i>{esc(order['gift_choice'])}</i>" if order["gift_choice"] else " Побажань клієнт не вказав."
-        notes.append(f"💎 Покладіть у посилку прикрасу Vivienne Westwood.{wish}")
+        notes.append(f"💎 Покладіть у посилку подарунковий кулон Vivienne Westwood.{wish}")
     if order["client_promo"] != promo:
         notes.append(f"⚠️ У Mini App клієнт бачив промокод <b>{esc(order['client_promo'] or 'немає')}</b>, "
                      f"а в базі зараз: <b>{esc(promo or 'немає')}</b> (міг згоріти). Сума розрахована за базою.")
@@ -971,7 +997,7 @@ def admin_text(order: dict, order_no: str, message: Message) -> str:
         pre = min(PREPAYMENT, order["total"])
         lines.append(f"Передплата: {money(pre)} (очікується), при отриманні: {money(order['total'] - pre)}")
     if order["promo"]:
-        lines += ["", f"🎟 Промокод клієнта: <b>{order['promo']}</b> ({esc(PRIZES[order['promo']]['title'])})"]
+        lines += ["", f"🎟 Промокод клієнта: <b>{order['promo']}</b> ({esc(prize_title(order['promo']))})"]
     else:
         lines += ["", "🎟 Промокод: немає"]
     notes = promo_notes(order)
@@ -1005,7 +1031,7 @@ def client_text(order: dict, order_no: str) -> str:
             f"Решту суми — <b>{money(total - pre)}</b> — сплатите при отриманні у відділенні Нової Пошти.\n"
         )
     if order["promo"] == "WESTWOOD":
-        text += "\n💎 Подарункова прикраса Vivienne Westwood вже чекає вас у посилці!\n"
+        text += "\n💎 Подарунковий кулон Vivienne Westwood вже чекає вас у посилці!\n"
     return text + "\nМенеджер зв'яжеться з вами найближчим часом. 💜"
 
 
@@ -1176,14 +1202,76 @@ async def cmd_products(message: Message, db: Database) -> None:
     """Адмін бачить каталог з id товарів (вони потрібні для наступних команд)."""
     items = await dbrun(db.list_products)
     if not items:
-        await message.answer("Каталог порожній.")
+        await message.answer("Каталог порожній. Додайте товар: /addproduct")
         return
-    await message.answer(
-        "🛍 <b>Каталог</b>\n" + "\n".join(product_line(p) for p in items) + "\n\n"
-        "✅ є в наявності · ❌ немає\n"
-        "<code>/toggleproduct id</code> — змінити наявність\n"
-        "<code>/setprice id ціна</code> — змінити ціну\n"
-        "<code>/setimg id посилання</code> — змінити фото")
+    chunks, current = [], "🛍 <b>Каталог</b>\n"
+    for p in items:                                      # ліміт Telegram — 4096 символів на повідомлення
+        line = product_line(p) + "\n"
+        if len(current) + len(line) > 3500:
+            chunks.append(current)
+            current = ""
+        current += line
+    chunks.append(current + "\n"
+                  "✅ є в наявності · ❌ немає\n"
+                  "<code>/addproduct</code> — додати товар\n"
+                  "<code>/toggleproduct id</code> — змінити наявність\n"
+                  "<code>/setprice id ціна</code> — змінити ціну\n"
+                  "<code>/setimg id посилання</code> — змінити фото")
+    for chunk in chunks:
+        await message.answer(chunk)
+
+
+ADDPRODUCT_USAGE = (
+    "➕ <b>Додати товар</b>\n\n"
+    "<code>/addproduct id | ціна | назва | опис | емодзі | фото</code>\n"
+    "Обов'язкові лише перші три поля. Приклад:\n"
+    "<code>/addproduct ring1 | 599 | Vivienne Westwood Ring | Каблучка з орбом | 💍</code>\n\n"
+    "• <b>id</b> — латиницею, цифри та _ (2–32 символи), має бути унікальним\n"
+    "• <b>фото</b> за замовчуванням <code>images/id.jpg</code>: просто завантажте файл у папку images "
+    "репозиторію. Інше посилання (https://… або images/…) вкажіть шостим полем, «-» — без фото\n"
+    "• розділяйте поля символом | ; сам символ | у тексті використовувати не можна")
+
+
+@router.message(Command("addproduct"), F.from_user.id == ADMIN_ID)
+async def cmd_addproduct(message: Message, command: CommandObject, db: Database) -> None:
+    """Додає товар у каталог:  /addproduct id | ціна | назва | опис | емодзі | фото"""
+    fields = [f.strip() for f in (command.args or "").split("|")]
+    if not command.args or not 3 <= len(fields) <= 6:
+        await message.answer(ADDPRODUCT_USAGE)
+        return
+    pid = fields[0].lower()
+    price_text = fields[1].replace(" ", "")
+    name, desc = fields[2], (fields[3] if len(fields) > 3 else "")
+    emoji = (fields[4] if len(fields) > 4 and fields[4] else "🛍")
+    img = fields[5] if len(fields) > 5 and fields[5] else f"images/{pid}.jpg"
+    if img == "-":
+        img = ""
+    problems = []
+    if not re.fullmatch(r"[a-z0-9_]{2,32}", pid):
+        problems.append("id: лише латиниця, цифри та _ (2–32 символи)")
+    if not re.fullmatch(r"\d{1,7}", price_text) or int(price_text) < 1:
+        problems.append("ціна: ціле число більше нуля")
+    if not name or len(name) > 120:
+        problems.append("назва: від 1 до 120 символів")
+    if len(desc) > 200:
+        problems.append("опис: до 200 символів")
+    if len(emoji) > 12:
+        problems.append("емодзі: вкажіть один значок")
+    if img and not re.fullmatch(r"(https://\S+|images/\S+)", img):
+        problems.append("фото: https://… або images/файл.jpg (або «-» без фото)")
+    if problems:
+        await message.answer("😕 Товар не додано:\n• " + "\n• ".join(problems) + "\n\nПриклад: /addproduct")
+        return
+    product = {"id": pid, "name": name, "price": int(price_text), "desc": desc, "emoji": emoji, "img": img}
+    if not await dbrun(db.add_product, product):
+        await message.answer(f"Товар з id <code>{esc(pid)}</code> уже існує. "
+                             "Змінити ціну — /setprice, наявність — /toggleproduct, фото — /setimg.")
+        return
+    photo = (f"\nФото: <code>{esc(img)}</code> — переконайтесь, що файл є в репозиторії." if img
+             else "\nБез фото (на картці буде емодзі).")
+    await message.answer(f"✅ Товар додано: <b>{esc(name)}</b> — {money(int(price_text))}\n"
+                         f"id: <code>{esc(pid)}</code>{photo}\n"
+                         "У магазині з'явиться за хвилину (або після повторного відкриття).")
 
 
 @router.message(Command("toggleproduct"), F.from_user.id == ADMIN_ID)
@@ -1410,11 +1498,15 @@ async def api_spin(request: web.Request) -> web.Response:
     status, promo = await dbrun(db.spin, uid, code)
 
     if status == "ok":
-        scheduler.schedule_expiry(uid, promo["expires_at"])  # через 24 год промокод буде видалено
-        log.info("Користувач %s виграв %s", uid, code)
-        payload = await state_payload(db, uid)
+        payload = await state_payload(db, uid)      # актуальний стан: спроби, що лишились, і чинний бонус (якщо є)
         payload["code"] = promo["code"]
-        payload["remaining"] = promo["expires_at"] - int(time.time())
+        if promo["code"] == NO_PRIZE:
+            log.info("Користувач %s: без виграшу", uid)
+            payload["remaining"] = 0                # промокод не видано, таймер не потрібен
+        else:
+            scheduler.schedule_expiry(uid, promo["expires_at"])  # через 24 год промокод буде видалено
+            log.info("Користувач %s виграв %s", uid, code)
+            payload["remaining"] = promo["expires_at"] - int(time.time())
         return web.json_response(payload)
 
     payload = await state_payload(db, uid)

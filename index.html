@@ -445,8 +445,8 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outl
 
     <!-- Лише коли виграно WESTWOOD -->
     <div class="field" id="giftField" hidden>
-      <label for="fGift">Яку прикрасу Vivienne Westwood хочете в подарунок?</label>
-      <input id="fGift" name="gift" type="text" maxlength="80" placeholder="Напр.: підвіска-орб або залиште порожнім">
+      <label for="fGift">Який кулон Vivienne Westwood хочете в подарунок?</label>
+      <input id="fGift" name="gift" type="text" maxlength="80" placeholder="Напр.: колір чи модель — або залиште порожнім">
     </div>
 
     <div class="pay-title">Спосіб оплати</div>
@@ -530,11 +530,17 @@ const CONFIG = {
 /* Призи. Шанси задаються полем weight (сума = 100).
    Сектори на колесі однакового розміру, шанс визначається лише вагою. */
 const PRIZES = [
-  { code: 'VAD10',       weight: 30, emoji: '🏷️', label: '−10%',  title: 'Знижка 10%',                 desc: 'на все замовлення',          bg: '#c9a45c', fg: '#1a1306' },
-  { code: 'FREESHIP600', weight: 25, emoji: '🚚', label: '0 ₴',   title: 'Безкоштовна доставка',        desc: 'від 600 ₴ у кошику',         bg: '#26262b', fg: '#f1ede6' },
-  { code: '3FOR2',       weight: 20, emoji: '✨', label: '1+1=3', title: 'Акція «1+1=3»',               desc: 'три товари за ціну двох',    bg: '#e9dcc0', fg: '#1a1306' },
-  { code: 'SECOND20',    weight: 20, emoji: '🛍️', label: '−20%',  title: 'Знижка 20% на другий товар',  desc: 'у вашому чеку',              bg: '#5b2a3a', fg: '#f1ede6' },
-  { code: 'WESTWOOD',    weight: 5,  emoji: '💎', label: 'VW',    title: 'Прикраса Vivienne Westwood',  desc: 'у подарунок, на ваш вибір',  bg: '#9a6b4b', fg: '#fff6ea' }
+  // noPrize — «без виграшу»: спроба списується, бонус не видається. Шанси (weight) мають давати 100 і збігатися з bot.py.
+  { code: 'TRY_AGAIN',   weight: 20, emoji: '🍀', label: 'Ще раз', title: 'Цього разу без виграшу',      desc: 'Спробуйте ще раз — удача поруч', bg: '#8e8a95', fg: '#17121f', noPrize: true },
+  { code: 'WESTWOOD',    weight: 3,  emoji: '💎', label: 'VW',     title: 'Кулон Vivienne Westwood',    desc: 'безкоштовно, у подарунок до замовлення', bg: '#9a6b4b', fg: '#fff6ea' },
+  { code: 'VAD10',       weight: 30, emoji: '🏷️', label: '−10%',  title: 'Знижка 10%',                 desc: 'на все замовлення',              bg: '#c9a45c', fg: '#1a1306' },
+  { code: 'SECOND20',    weight: 25, emoji: '🛍️', label: '−20%',  title: 'Знижка 20% на другий товар', desc: 'на другий за вартістю товар у чеку', bg: '#5b2a3a', fg: '#f1ede6' },
+  { code: 'VAD15',       weight: 7,  emoji: '💸', label: '−15%',   title: 'Знижка 15%',                 desc: 'на все замовлення',              bg: '#e9dcc0', fg: '#1a1306' },
+  { code: 'FREESHIP600', weight: 15, emoji: '🚚', label: '0 ₴',    title: 'Безкоштовна доставка',       desc: 'від 600 ₴ у кошику',             bg: '#2a4a52', fg: '#f1ede6' }
+];
+// Архівні бонуси, видані ДО оновлення колеса (діють до 24 год). На колесі їх немає, але в кошику вони ще працюють.
+const LEGACY_PRIZES = [
+  { code: '3FOR2', emoji: '✨', title: 'Акція «1+1=3»', desc: 'три товари за ціну двох' }
 ];
 
 /* Каталог НЕ зберігається в коді. Товари, ціни й наявність приходять із бази бота:
@@ -684,7 +690,12 @@ function loadState() {
 }
 function saveState() { if (!serverMode) store.set(STATE_KEY, JSON.stringify(state)); }
 
-const activePrize = () => (state.prize && state.expires > Date.now()) ? PRIZES.find((p) => p.code === state.prize) : null;
+const findPrize = (code) => PRIZES.find((p) => p.code === code) || LEGACY_PRIZES.find((p) => p.code === code) || null;
+const activePrize = () => {
+  if (!state.prize || state.expires <= Date.now()) return null;
+  const pr = findPrize(state.prize);
+  return pr && !pr.noPrize ? pr : null;      // «без виграшу» ніколи не є активним бонусом
+};
 const attemptsLeft = () => Math.max(0, state.max - state.used);
 
 /* ================================================================
@@ -717,13 +728,13 @@ function buildWheel(svg) {
     g.style.fontFamily = 'Manrope, system-ui, sans-serif';
 
     const em = document.createElementNS(SVGNS, 'text');
-    em.setAttribute('x', CX); em.setAttribute('y', CY - R * 0.70); em.setAttribute('font-size', '34');
+    em.setAttribute('x', CX); em.setAttribute('y', CY - R * 0.72); em.setAttribute('font-size', '32');
     em.textContent = p.emoji;
     g.appendChild(em);
 
     const tx = document.createElementNS(SVGNS, 'text');
-    tx.setAttribute('x', CX); tx.setAttribute('y', CY - R * 0.40);
-    tx.setAttribute('font-size', '26'); tx.setAttribute('font-weight', '800');
+    tx.setAttribute('x', CX); tx.setAttribute('y', CY - R * 0.46);
+    tx.setAttribute('font-size', p.label.length > 5 ? '19' : '22'); tx.setAttribute('font-weight', '800');   // довший підпис — менший шрифт, щоб не вилазив із сектора 60°
     tx.textContent = p.label;
     g.appendChild(tx);
     svg.appendChild(g);
@@ -747,6 +758,17 @@ function openWheelFull() {
 }
 function closeWheelFull() { $('wheelFull').classList.remove('open', 'done'); }
 function showWheelResult(p) {
+  if (p.noPrize) {                                    // «без виграшу»: нічого не видано, чинний бонус (якщо був) лишається
+    $('wfTitle').textContent = 'Цього разу без виграшу';
+    $('wfSub').textContent = activePrize() ? 'Ваш поточний бонус лишається чинним' : 'Спробу використано';
+    $('wfEmoji').textContent = p.emoji;
+    $('wfPrize').textContent = 'Не пощастило';
+    $('wfDesc').textContent = attemptsLeft() > 0 ? 'Спробуйте ще раз — удача поруч!' : 'Запросіть друга й отримайте ще одну спробу.';
+    $('wfCode').hidden = true;
+    $('wheelFull').classList.add('done');
+    return;
+  }
+  $('wfCode').hidden = false;
   $('wfTitle').textContent = '🎉 Вітаємо!';
   $('wfSub').textContent = replacedPrize ? 'Новий бонус замінив попередній' : 'Бонус уже застосовано до вашого кошика';
   $('wfEmoji').textContent = p.emoji;
@@ -815,15 +837,20 @@ async function spin() {
 
 function onSpinEnd(idx) {
   spinning = false;
+  const won = PRIZES[idx];
   if (serverMode && serverSpin) {
-    applyServerState({ attempts: serverSpin.attempts, prize: { code: serverSpin.code, remaining: serverSpin.remaining } });
+    // Стан беремо ЗІ СЛІВ СЕРВЕРА: при «без виграшу» наявний бонус (якщо був) лишається, нового — немає
+    applyServerState({ attempts: serverSpin.attempts, prize: serverSpin.prize });
+  } else if (won.noPrize) {
+    state.used += 1;                                   // режим перегляду: «без виграшу» лише списує спробу
+    saveState();
   } else {
     state.used += 1;
-    state.prize = PRIZES[idx].code;
+    state.prize = won.code;
     state.expires = Date.now() + CONFIG.PROMO_HOURS * 3600 * 1000;
     saveState();
   }
-  notify('success');
+  notify(won.noPrize ? 'warning' : 'success');
   updateBonusUI();
   renderCartUI();
   showWheelResult(PRIZES[idx]);   // результат показуємо в тому ж повноекранному вікні
@@ -1043,11 +1070,12 @@ function changeQty(id, delta) {
 /* ----------------------------------------------------------------
    Розрахунок з промокодом. Правила (бот має рахувати так само):
    - VAD10:       −10% від суми товарів
+   - VAD15:       −15% від суми товарів
    - FREESHIP600: доставка 0 ₴, якщо сума товарів ≥ 600 ₴
-   - 3FOR2:       одиниці товарів сортуються від дорогої до дешевої;
+   - 3FOR2:       (АРХІВНИЙ, лише для вже виданих) одиниці товарів сортуються від дорогої до дешевої;
                   кожна третя (найдешевша в трійці) безкоштовна
    - SECOND20:    −20% на другу за вартістю одиницю товару (потрібно ≥ 2 шт.)
-   - WESTWOOD:    без зміни суми, подарунок додає менеджер
+   - WESTWOOD:    без зміни суми, подарунковий кулон додає менеджер
    ---------------------------------------------------------------- */
 function totals() {
   const units = [];
@@ -1063,17 +1091,19 @@ function totals() {
 
   let discount = 0, hint = '';
   if (code === 'VAD10') {
-    discount = Math.round(subtotal * 0.10);
+    discount = Math.floor((subtotal * 10 + 50) / 100);        // −10%, округлення від .5 вгору — рівно як на сервері
+  } else if (code === 'VAD15') {
+    discount = Math.floor((subtotal * 15 + 50) / 100);        // −15%
   } else if (code === '3FOR2') {
     for (let i = 2; i < count; i += 3) discount += units[i];
     if (count > 0 && count % 3 !== 0) { const need = 3 - (count % 3); hint = `Додайте ще ${need} ${plural(need, 'товар', 'товари', 'товарів')} — і ${need === 1 ? 'один' : 'найдешевший'} буде безкоштовним (1+1=3).`; }
   } else if (code === 'SECOND20') {
-    if (count >= 2) discount = Math.round(units[1] * 0.20);
+    if (count >= 2) discount = Math.floor((units[1] * 20 + 50) / 100);
     else if (count === 1) hint = 'Додайте другий товар — на нього діє знижка 20%.';
   } else if (code === 'FREESHIP600') {
     if (count > 0 && subtotal < CONFIG.FREE_SHIP_FROM) hint = `Додайте товарів ще на ${money(CONFIG.FREE_SHIP_FROM - subtotal)} — і доставка безкоштовна.`;
   } else if (code === 'WESTWOOD') {
-    hint = '💎 Прикрасу Vivienne Westwood на ваш вибір додамо у подарунок.';
+    hint = '💎 Подарунковий кулон Vivienne Westwood додамо до вашого замовлення.';
   }
 
   const freeShip = code === 'FREESHIP600' && subtotal >= CONFIG.FREE_SHIP_FROM;
@@ -1144,12 +1174,12 @@ const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 
 /* ----- Список призів ----- */
 function renderPrizes() {
-  $('prizeList').innerHTML = PRIZES.map((p) => `
+  $('prizeList').innerHTML = PRIZES.filter((p) => !p.noPrize).map((p) => `
     <div class="prize-item">
       <div class="prize-emoji">${p.emoji}</div>
       <div><b>${p.title}</b><span>${p.desc}</span></div>
     </div>`).join('');
-  $('prizeNote').textContent = `Бонус діє ${CONFIG.PROMO_HOURS} години. Новий виграш замінює попередній.`;
+  $('prizeNote').textContent = `Бонус діє ${CONFIG.PROMO_HOURS} години. Новий виграш замінює попередній. Іноді колесо зупиняється на «без виграшу» — спроба тоді все одно списується.`;
 }
 
 /* ----- Відстеження посилки Нової Пошти ----- */
