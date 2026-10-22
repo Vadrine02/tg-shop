@@ -92,11 +92,7 @@ DB_PATH = os.getenv("DB_PATH", "vadrine.db")
 TURSO_URL = os.getenv("TURSO_DATABASE_URL") or os.getenv("TURSO_URL", "").strip()
 TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN") or os.getenv("TURSO_TOKEN", "").strip()
 
-# 6) Реквізити для способу оплати «за реквізитами» — бот надішле їх клієнту після замовлення.
-PAYMENT_DETAILS = os.getenv(
-    "PAYMENT_DETAILS",
-    "IBAN: UA00 0000 0000 0000 0000 0000 00000\nКартка Mono: 0000 0000 0000 0000",
-)
+# 6) Реквізити для оплати бот НЕ надсилає і в коді не зберігає: їх клієнту надсилає менеджер (див. client_text).
 
 # 7) Ключ API Нової Пошти — НЕОБОВ'ЯЗКОВО. Публічне відстеження за ТТН зазвичай працює й без ключа.
 #    Якщо Нова Пошта почне повертати помилку — отримайте безкоштовний ключ у особистому кабінеті
@@ -129,11 +125,7 @@ SEED_PRODUCTS = [
     {"id": "necklace13", "name": "Vivienne Westwood New Small Orb Pendant Necklace червоний", "price": 499, "emoji": "💎", "desc": "Червона підвіска New Small Orb", "img": "https://vadrine02.github.io/tg-shop/images/necklace13.jpg"},
     {"id": "necklace14", "name": "Vivienne Westwood New Small Orb Pendant Necklace синій", "price": 499, "emoji": "💎", "desc": "Синя підвіска New Small Orb", "img": "https://vadrine02.github.io/tg-shop/images/necklace14.jpg"},
     {"id": "necklace15", "name": "Vivienne Westwood New Small Orb Pendant Necklace чорний", "price": 499, "emoji": "💎", "desc": "Чорна підвіска New Small Orb", "img": "https://vadrine02.github.io/tg-shop/images/necklace15.jpg"},
-    {"id": "necklace_vw_blue",  "name": "Підвіска Vivienne Westwood Orb синій", "price": 399, "emoji": "💎", "desc": "Підвіска Orb з синьою сферою", "img": "https://vadrine02.github.io/tg-shop/images/vw_blue.jpg"},
-    {"id": "pack_vw1",          "name": "Подарункове пакування Vivienne Westwood", "price": 299, "emoji": "🎁", "desc": "Фірмова коробка, пакет, пильник та серветка", "img": "https://vadrine02.github.io/tg-shop/images/vw_pack.jpg"},
     {"id": "wallet1",    "name": "Vivienne Westwood Vintage Water Orb Tri-Fold Wallet", "price": 1299, "emoji": "👛", "desc": "Шкіряний гаманець Tri-Fold", "img": "https://vadrine02.github.io/tg-shop/images/wallet1.jpg"},
-    {"id": "bracelet_lacoste1",  "name": "Браслет Lacoste Stainless Steel", "price": 749, "emoji": "🐊", "desc": "Сталевий браслет у повній комплектації", "img": "https://vadrine02.github.io/tg-shop/images/lacoste1.jpg"},
-    {"id": "bracelet_lv1",       "name": "Шкіряний браслет Louis Vuitton Monogram", "price": 899, "emoji": "📿", "desc": "Шкіряний браслет із тисненням Monogram", "img": "https://vadrine02.github.io/tg-shop/images/lv1.jpg"},
     {"id": "necklace16", "name": "Pandora Sparkling Heart Collier Necklace", "price": 499, "emoji": "💖", "desc": "Кольє Pandora Sparkling Heart", "img": "https://vadrine02.github.io/tg-shop/images/necklace16.jpg"},
     {"id": "clutch1",    "name": "Zadig & Voltaire Rock Clutch White", "price": 1399, "emoji": "👜", "desc": "Білий клатч Zadig & Voltaire Rock", "img": "https://vadrine02.github.io/tg-shop/images/clutch1.jpg"},
     {"id": "clutch2",    "name": "Zadig & Voltaire Rock Clutch Black", "price": 1399, "emoji": "👜", "desc": "Чорний клатч Zadig & Voltaire Rock", "img": "https://vadrine02.github.io/tg-shop/images/clutch2.jpg"},
@@ -309,7 +301,8 @@ CREATE TABLE IF NOT EXISTS products (
     "desc"    TEXT    NOT NULL DEFAULT '',
     img       TEXT    NOT NULL DEFAULT '',
     emoji     TEXT    NOT NULL DEFAULT '🛍',
-    available INTEGER NOT NULL DEFAULT 1
+    available INTEGER NOT NULL DEFAULT 1,
+    pos       INTEGER NOT NULL DEFAULT 0
 )
 """
 
@@ -318,7 +311,7 @@ USER_COLS = ("user_id", "first_name", "username", "spins_total", "spins_used", "
 PROMO_COLS = ("user_id", "code", "issued_at", "expires_at", "reminded")
 CART_COLS = ("user_id", "item_count", "updated_at")
 ORDER_COLS = ("id", "user_id", "created_at", "total", "promo_code", "payload", "details", "ttn")
-PRODUCT_COLS = ("id", "name", "price", "desc", "img", "emoji", "available")
+PRODUCT_COLS = ("id", "name", "price", "desc", "img", "emoji", "available", "pos")
 
 
 def _sel(cols: tuple) -> str:
@@ -356,6 +349,11 @@ class Database:
             except Exception:
                 self.conn.execute(f"ALTER TABLE orders ADD COLUMN {column} TEXT")
                 self.conn.commit()
+        try:                                           # міграція існуючих баз: колонка pos (порядок товарів)
+            self.conn.execute("SELECT pos FROM products LIMIT 1").fetchall()
+        except Exception:
+            self.conn.execute("ALTER TABLE products ADD COLUMN pos INTEGER NOT NULL DEFAULT 0")
+            self.conn.commit()
         added = self.seed_products(SEED_PRODUCTS)
         if added:
             log.info("Каталог у базі був порожній — додано %s товари(ів) з SEED_PRODUCTS", added)
@@ -398,10 +396,45 @@ class Database:
         with self.tx():
             if self.execute("SELECT 1 FROM products WHERE id=?", (p["id"],)).fetchone():
                 return False
+            nxt = self.execute("SELECT COALESCE(MAX(pos), 0) + 1 FROM products").fetchone()[0]   # в кінець списку
             self.execute(
-                'INSERT INTO products(id, name, price, "desc", img, emoji, available) VALUES (?,?,?,?,?,?,1)',
-                (p["id"], p["name"], int(p["price"]), p.get("desc", ""), p.get("img", ""), p.get("emoji", "🛍")))
+                'INSERT INTO products(id, name, price, "desc", img, emoji, available, pos) VALUES (?,?,?,?,?,?,1,?)',
+                (p["id"], p["name"], int(p["price"]), p.get("desc", ""), p.get("img", ""), p.get("emoji", "🛍"), int(nxt)))
             return True
+
+    def delete_product(self, product_id: str) -> bool:
+        """Остаточно видаляє товар з каталогу. Історія замовлень лишається (назви збережені в самих замовленнях)."""
+        with self.tx():
+            if not self.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone():
+                return False
+            self.execute("DELETE FROM products WHERE id=?", (product_id,))
+            return True
+
+    def move_product(self, product_id: str, target) -> tuple[int, int] | None:
+        """Переставляє товар у списку. target: номер позиції (1 = перший) або 'top' / 'bottom' / 'up' / 'down'.
+        Повертає (нова позиція, усього товарів) або None, якщо товару немає."""
+        with self.tx():
+            rows = self._all("SELECT id, pos FROM products ORDER BY pos, rowid", (), ("id", "pos"))
+            ids = [r["id"] for r in rows]
+            if product_id not in ids:
+                return None
+            cur, total = ids.index(product_id), len(ids)
+            if target == "top":
+                new = 0
+            elif target == "bottom":
+                new = total - 1
+            elif target == "up":
+                new = max(cur - 1, 0)
+            elif target == "down":
+                new = min(cur + 1, total - 1)
+            else:
+                new = max(0, min(int(target) - 1, total - 1))
+            ids.insert(new, ids.pop(cur))
+            old_pos = {r["id"]: r["pos"] for r in rows}
+            for i, pid in enumerate(ids, 1):           # оновлюємо лише ті товари, чия позиція змінилась
+                if old_pos[pid] != i:
+                    self.execute("UPDATE products SET pos=? WHERE id=?", (i, pid))
+            return new + 1, total
 
     def close(self) -> None:
         def _close() -> None:
@@ -577,7 +610,7 @@ class Database:
 
     def list_products(self) -> list[dict]:
         with self.lock:
-            return self._all(f"SELECT {_sel(PRODUCT_COLS)} FROM products ORDER BY rowid", (), PRODUCT_COLS)
+            return self._all(f"SELECT {_sel(PRODUCT_COLS)} FROM products ORDER BY pos, rowid", (), PRODUCT_COLS)
 
     def get_products_map(self) -> dict[str, dict]:
         return {p["id"]: p for p in self.list_products()}
@@ -1000,6 +1033,9 @@ def admin_text(order: dict, order_no: str, message: Message) -> str:
     if order["payment"] == "cod":
         pre = min(PREPAYMENT, order["total"])
         lines.append(f"Передплата: {money(pre)} (очікується), при отриманні: {money(order['total'] - pre)}")
+        lines.append("📩 <b>Надішліть клієнту реквізити</b> для передплати.")
+    else:
+        lines.append("📩 <b>Надішліть клієнту реквізити</b> для повної оплати.")
     if order["promo"]:
         lines += ["", f"🎟 Промокод клієнта: <b>{order['promo']}</b> ({esc(prize_title(order['promo']))})"]
     else:
@@ -1023,15 +1059,12 @@ def client_text(order: dict, order_no: str) -> str:
     if order["payment"] == "iban":
         text += (
             f"\n💳 <b>Повна сума до сплати: {money(total)}</b>\n"
-            f"Реквізити для оплати:\n<code>{esc(PAYMENT_DETAILS)}</code>\n"
-            f"У призначенні вкажіть номер замовлення {order_no}.\n"
+            "Реквізити для оплати надішле менеджер.\n"
         )
     else:
         pre = min(PREPAYMENT, total)
         text += (
-            f"\n💳 Щоб ми відправили замовлення, внесіть <b>передплату {money(pre)}</b> на реквізити:\n"
-            f"<code>{esc(PAYMENT_DETAILS)}</code>\n"
-            f"У призначенні вкажіть номер замовлення {order_no}.\n"
+            f"\n💳 Для відправлення потрібна <b>передплата {money(pre)}</b>. Реквізити для неї надішле менеджер.\n"
             f"Решту суми — <b>{money(total - pre)}</b> — сплатите при отриманні у відділенні Нової Пошти.\n"
         )
     if order["promo"] == "WESTWOOD":
@@ -1210,7 +1243,7 @@ async def cmd_products(message: Message, db: Database) -> None:
         return
     chunks, current = [], "🛍 <b>Каталог</b>\n"
     for p in items:                                      # ліміт Telegram — 4096 символів на повідомлення
-        line = product_line(p) + "\n"
+        line = f"{items.index(p) + 1}. " + product_line(p) + "\n"
         if len(current) + len(line) > 3500:
             chunks.append(current)
             current = ""
@@ -1220,7 +1253,9 @@ async def cmd_products(message: Message, db: Database) -> None:
                   "<code>/addproduct</code> — додати товар\n"
                   "<code>/toggleproduct id</code> — змінити наявність\n"
                   "<code>/setprice id ціна</code> — змінити ціну\n"
-                  "<code>/setimg id посилання</code> — змінити фото")
+                  "<code>/setimg id посилання</code> — змінити фото\n"
+                  "<code>/moveproduct id позиція</code> — перемістити в списку\n"
+                  "<code>/delproduct id</code> — видалити товар")
     for chunk in chunks:
         await message.answer(chunk)
 
@@ -1276,6 +1311,57 @@ async def cmd_addproduct(message: Message, command: CommandObject, db: Database)
     await message.answer(f"✅ Товар додано: <b>{esc(name)}</b> — {money(int(price_text))}\n"
                          f"id: <code>{esc(pid)}</code>{photo}\n"
                          "У магазині з'явиться за хвилину (або після повторного відкриття).")
+
+
+MOVE_USAGE = (
+    "↕️ <b>Порядок товарів</b>\n\n"
+    "<code>/moveproduct id 1</code> — на 1-ше місце\n"
+    "<code>/moveproduct id 5</code> — на 5-те місце\n"
+    "<code>/moveproduct id up</code> або <code>down</code> — на одну позицію вгору чи вниз\n"
+    "<code>/moveproduct id top</code> або <code>bottom</code> — на початок чи в кінець\n\n"
+    "Номери позицій і id — у списку /products. Так само товари йдуть і в магазині.")
+
+
+@router.message(Command("moveproduct"), F.from_user.id == ADMIN_ID)
+async def cmd_moveproduct(message: Message, command: CommandObject, db: Database) -> None:
+    """Змінює місце товару в каталозі:  /moveproduct <id> <позиція | top | bottom | up | down>"""
+    parts = (command.args or "").split()
+    target = parts[1].lower() if len(parts) == 2 else ""
+    if len(parts) != 2 or not (target in ("top", "bottom", "up", "down") or re.fullmatch(r"\d{1,4}", target)) \
+            or (target.isdigit() and int(target) < 1):
+        await message.answer(MOVE_USAGE)
+        return
+    result = await dbrun(db.move_product, parts[0], target if not target.isdigit() else int(target))
+    if result is None:
+        await message.answer("Товар не знайдено. Список id: /products")
+        return
+    product = await dbrun(db.get_product, parts[0])
+    await message.answer(f"✅ <b>{esc(product['name'])}</b> тепер на позиції {result[0]} із {result[1]}.\n"
+                         "У магазині порядок зміниться за хвилину (або після повторного відкриття).")
+
+
+@router.message(Command("delproduct"), F.from_user.id == ADMIN_ID)
+async def cmd_delproduct(message: Message, command: CommandObject, db: Database) -> None:
+    """Видаляє товар назавжди (з підтвердженням):  /delproduct <id>  →  /delproduct <id> так"""
+    parts = (command.args or "").split()
+    if not parts or len(parts) > 2:
+        await message.answer("Використання: <code>/delproduct id</code>\nСписок id: /products\n"
+                             "Щоб лише тимчасово сховати товар — /toggleproduct id.")
+        return
+    product = await dbrun(db.get_product, parts[0])
+    if not product:
+        await message.answer("Товар не знайдено. Список id: /products")
+        return
+    if len(parts) == 1 or parts[1].lower() not in ("так", "yes", "confirm"):
+        await message.answer(
+            f"⚠️ Видалити <b>{esc(product['name'])}</b> (<code>{esc(product['id'])}</code>) назавжди?\n"
+            "Товар зникне з каталогу та з кошиків; історія замовлень збережеться.\n\n"
+            f"Підтвердьте: <code>/delproduct {esc(product['id'])} так</code>\n"
+            f"Тимчасово сховати без видалення: /toggleproduct {esc(product['id'])}")
+        return
+    await dbrun(db.delete_product, product["id"])
+    await message.answer(f"🗑 Видалено: <b>{esc(product['name'])}</b> (<code>{esc(product['id'])}</code>).\n"
+                         "Повернути можна командою /addproduct з тим самим id.")
 
 
 @router.message(Command("toggleproduct"), F.from_user.id == ADMIN_ID)
