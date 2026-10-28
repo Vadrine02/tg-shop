@@ -314,6 +314,27 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outl
 .catalog-msg { grid-column: 1 / -1; text-align: center; padding: 36px 12px; color: var(--muted); line-height: 1.5; }
 .catalog-msg .btn-ghost { max-width: 260px; margin: 12px auto 0; }
 
+/* ---------- Картка товару: галерея зі свайпом, крапки, опис ---------- */
+.card { cursor: pointer; }
+.prod-gallery {
+  display: flex; width: 100%; aspect-ratio: 1 / 1; max-height: 62vh; overflow-x: auto; overflow-y: hidden;
+  scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;
+  scrollbar-width: none; -ms-overflow-style: none; background: var(--surface-2);
+}
+.prod-gallery::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.prod-slide {
+  position: relative; flex: 0 0 100%; display: grid; place-items: center; font-size: 76px;
+  scroll-snap-align: center; scroll-snap-stop: always; background: linear-gradient(160deg, var(--surface-2), #101013);
+}
+.prod-slide img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.prod-dots { display: flex; justify-content: center; gap: 7px; padding: 14px 0 2px; }
+.prod-dots .dot { width: 7px; height: 7px; padding: 0; border-radius: 4px; background: rgba(255, 255, 255, .28); transition: width .25s ease, background .25s ease; }
+.prod-dots .dot.active { width: 22px; background: var(--gold); }
+.prod-info { padding: 8px 18px 28px; }
+.prod-info h2 { font-family: var(--font-display); font-weight: 600; font-size: 28px; line-height: 1.15; margin: 10px 0 6px; overflow-wrap: anywhere; }
+.prod-price { font-family: var(--font-display); font-weight: 700; font-size: 32px; color: var(--gold-2); margin-bottom: 12px; }
+.prod-desc { margin: 0 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+
 .toast { position: fixed; z-index: 60; left: 50%; bottom: calc(var(--nav-h) + var(--safe-bottom) + 16px); transform: translate(-50%, 20px); max-width: 90vw; background: var(--text); color: var(--bg); padding: 11px 18px; border-radius: 12px; font-weight: 700; font-size: 13.5px; text-align: center; opacity: 0; pointer-events: none; transition: opacity .25s ease, transform .25s ease; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
@@ -362,6 +383,30 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outl
 
   <div class="catalog-head"><h2>Каталог</h2><span>Нова колекція</span></div>
   <div id="grid" class="grid"></div>
+</section>
+
+<!-- ============ КАРТКА ТОВАРУ ============ -->
+<section id="screenProduct" class="screen">
+  <header class="sticky-top">
+    <div class="topbar">
+      <button id="prodBack" class="cart-btn" aria-label="Назад">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="brand">vadrine</div>
+      <button id="prodCartBtn" class="cart-btn" aria-label="Відкрити кошик">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg>
+        <span id="prodBadge" class="badge">0</span>
+      </button>
+    </div>
+  </header>
+  <div id="prodGallery" class="prod-gallery" aria-label="Фото товару"></div>
+  <div id="prodDots" class="prod-dots" hidden></div>
+  <div class="prod-info">
+    <h2 id="prodName"></h2>
+    <div id="prodPrice" class="prod-price"></div>
+    <p id="prodDesc" class="prod-desc"></p>
+    <button id="prodAdd" class="btn-gold">В кошик</button>
+  </div>
 </section>
 
 <!-- ============ ВКЛАДКА 2: ГРА ============ -->
@@ -948,6 +993,7 @@ function renderCatalog() {
   PRODUCTS.forEach((p) => {
     const card = document.createElement('article');
     card.className = 'card' + (p.available ? '' : ' soldout');
+    card.dataset.id = p.id;                          // клік по картці відкриває детальну картку товару
     card.innerHTML = `
       <div class="card-img"><span>${esc(p.emoji)}</span>${p.available ? '' : '<span class="soldout-badge">Немає в наявності</span>'}</div>
       <div class="card-body">
@@ -959,14 +1005,15 @@ function renderCatalog() {
              <button class="btn-hint" data-hint="${esc(p.id)}">Натякнути другу 🎁</button>`
           : '<button class="btn-add" disabled>Немає в наявності</button>'}
       </div>`;
-    if (p.img) {
+    const firstImg = imgList(p.img)[0];               // у каталозі показуємо перше фото з переліку
+    if (firstImg) {
       const img = document.createElement('img');
       img.alt = p.name;
       img.decoding = 'async';
       img.loading = 'lazy';                        // 25 товарів: вантажимо фото лише коли картка наближається до екрана
       img.onerror = () => img.remove();            // не завантажилось — лишається емодзі-заглушка
       card.querySelector('.card-img').appendChild(img);
-      img.src = p.img;
+      img.src = firstImg;
     }
     grid.appendChild(card);
   });
@@ -1010,6 +1057,10 @@ function applyCatalog(list) {
   }
   if (changed) renderCatalog();
   renderCartUI();
+  if (currentProduct) {                           // картка відкрита: товар зник — закриваємо, змінився — оновлюємо
+    const open = PRODUCTS.find((x) => x.id === currentProduct);
+    if (open) fillProduct(open); else closeProduct();
+  }
   if (gone.length) { toast('Закінчились і прибрані з кошика: ' + gone.join(', ')); reportCart(); }
 }
 
@@ -1123,10 +1174,11 @@ function summaryHTML(t) {
 function renderCartUI(bump) {
   const t = totals();
 
-  const badge = $('badge');
-  badge.textContent = t.count;
-  badge.classList.toggle('show', t.count > 0);
-  if (bump) { badge.classList.remove('bump'); void badge.offsetWidth; badge.classList.add('bump'); }
+  for (const badge of [$('badge'), $('prodBadge')]) {      // кошик у шапці каталогу й у шапці картки товару
+    badge.textContent = t.count;
+    badge.classList.toggle('show', t.count > 0);
+    if (bump) { badge.classList.remove('bump'); void badge.offsetWidth; badge.classList.add('bump'); }
+  }
 
   const list = $('cartList');
   if (t.count === 0) {
@@ -1321,10 +1373,108 @@ function submitOrder() {
 /* ================================================================
    ВКЛАДКИ
    ================================================================ */
+/* ================================================================
+   КАРТКА ТОВАРУ: галерея (свайп), крапки, назва, ціна, опис, «В кошик»
+   ================================================================ */
+let currentProduct = null;
+let dotEls = [];
+let galRaf = 0;
+
+function imgList(raw) {                            // поле img: одне або кілька посилань через кому
+  return String(raw || '').split(',').map((u) => u.trim()).filter(Boolean);
+}
+
+const tgBack = tg && tg.BackButton;                // системна кнопка «Назад» Telegram
+function setTgBack(show) { try { if (tgBack) { if (show) tgBack.show(); else tgBack.hide(); } } catch (e) {} }
+try { if (tgBack) tgBack.onClick(() => { if (currentProduct) closeProduct(); }); } catch (e) {}
+
+function renderDots(n) {
+  const box = $('prodDots');
+  box.innerHTML = '';
+  dotEls = [];
+  box.hidden = n < 2;                              // одне фото — крапки не потрібні
+  for (let i = 0; i < n; i++) {
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'dot' + (i === 0 ? ' active' : '');
+    dot.dataset.i = String(i);
+    dot.setAttribute('aria-label', 'Фото ' + (i + 1));
+    box.appendChild(dot);
+    dotEls.push(dot);
+  }
+}
+
+function syncDots() {                              // активна крапка = слайд, що зараз по центру галереї
+  const gal = $('prodGallery');
+  // обмежуємо індекс: «гумове» перетягування на iOS може виводити scrollLeft за межі галереї
+  const i = Math.max(0, Math.min(dotEls.length - 1, Math.round(gal.scrollLeft / (gal.clientWidth || 1))));
+  dotEls.forEach((dot, k) => dot.classList.toggle('active', k === i));
+}
+
+function fillProduct(p) {                          // текстові дані й стан кнопки (без перебудови галереї)
+  $('prodName').textContent = p.name;
+  $('prodPrice').textContent = money(p.price);
+  $('prodDesc').textContent = p.desc || '';
+  $('prodDesc').hidden = !p.desc;
+  const btn = $('prodAdd');
+  clearTimeout(btn._t);
+  btn.classList.remove('done');
+  btn.dataset.id = p.id;
+  btn.disabled = !p.available;
+  btn.textContent = p.available ? 'В кошик' : 'Немає в наявності';
+}
+
+function openProduct(id) {
+  const p = PRODUCTS.find((x) => x.id === id);
+  if (!p) return;
+  currentProduct = id;
+  const urls = imgList(p.img);
+  const gal = $('prodGallery');
+  gal.innerHTML = '';
+  (urls.length ? urls : ['']).forEach((url, i) => {         // без фото — один слайд з емодзі
+    const slide = document.createElement('div');
+    slide.className = 'prod-slide';
+    const emoji = document.createElement('span');
+    emoji.textContent = p.emoji;
+    slide.appendChild(emoji);
+    if (url) {
+      const img = document.createElement('img');
+      img.alt = p.name + ' — фото ' + (i + 1);
+      img.decoding = 'async';
+      if (i > 0) img.loading = 'lazy';
+      img.onerror = () => img.remove();                     // не завантажилось — лишається емодзі
+      slide.appendChild(img);
+      img.src = url;
+    }
+    gal.appendChild(slide);
+  });
+  gal.scrollLeft = 0;
+  renderDots(urls.length);
+  fillProduct(p);
+  $('screenShop').classList.remove('active');
+  $('screenProduct').classList.add('active');
+  $('screenProduct').scrollTop = 0;
+  setTgBack(true);
+  tap('light');
+}
+
+function closeProduct() {
+  currentProduct = null;
+  $('screenProduct').classList.remove('active');
+  $('screenShop').classList.add('active');                  // каталог лишається на тому ж місці прокрутки
+  setTgBack(false);
+}
+
+/* ================================================================
+   ВКЛАДКИ
+   ================================================================ */
 function showTab(name) {
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   $('screenShop').classList.toggle('active', name === 'shop');
   $('screenGame').classList.toggle('active', name === 'game');
+  $('screenProduct').classList.remove('active');            // картка товару ховається при будь-якій навігації
+  currentProduct = null;
+  setTgBack(false);
   closeSheets();
   if (name === 'game') Game.show(); else Game.hide();
 }
@@ -1615,9 +1765,19 @@ $('backdrop').addEventListener('click', closeSheets);
 document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', closeSheets));
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheets(); });
 
-$('cartBtn').addEventListener('click', () => {
+function openCart() {
   if (Date.now() - catalogLoadedAt > 20000) refreshCatalog();     // перед оформленням — свіжі ціни й наявність
   renderCartUI(); openSheet('cartSheet');
+}
+$('cartBtn').addEventListener('click', openCart);
+$('prodCartBtn').addEventListener('click', openCart);             // той самий кошик із картки товару
+$('prodBack').addEventListener('click', closeProduct);
+$('prodAdd').addEventListener('click', () => { const id = $('prodAdd').dataset.id; if (id) addToCart(id, $('prodAdd')); });
+$('prodGallery').addEventListener('scroll', () => { cancelAnimationFrame(galRaf); galRaf = requestAnimationFrame(syncDots); }, { passive: true });
+$('prodDots').addEventListener('click', (e) => {                  // тап по крапці — перехід до фото
+  const dot = e.target.closest('.dot');
+  const gal = $('prodGallery');
+  if (dot) gal.scrollTo({ left: Number(dot.dataset.i) * gal.clientWidth, behavior: 'smooth' });
 });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && Date.now() - catalogLoadedAt > 20000) refreshCatalog();
@@ -1637,6 +1797,9 @@ $('grid').addEventListener('click', (e) => {
     const p = PRODUCTS.find((x) => x.id === hint.dataset.hint);
     if (p) shareLink(`Мені б дуже хотілося: ${p.name} — ${money(p.price)} 🎁 vadrine`);
   }
+  if (add || hint || e.target.closest('button')) return;          // кнопки («В кошик», «Натякнути») працюють окремо
+  const card = e.target.closest('.card');                         // будь-яке інше місце картки — відкриває деталі
+  if (card && card.dataset.id) openProduct(card.dataset.id);
 });
 $('cartList').addEventListener('click', (e) => {
   const plus = e.target.closest('[data-plus]');

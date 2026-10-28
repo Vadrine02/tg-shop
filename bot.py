@@ -1260,6 +1260,19 @@ async def cmd_products(message: Message, db: Database) -> None:
         await message.answer(chunk)
 
 
+MAX_IMAGES = 10          # скільки фото може мати товар
+MAX_IMG_FIELD = 2000     # максимальна довжина поля img у базі
+
+
+def parse_images(text: str) -> list[str] | None:
+    """'url1, url2  url3' -> ['url1', 'url2', 'url3'] (без дублікатів). None — якщо посилань нема, їх забагато
+    або хоч одне некоректне (має бути https://… або images/…)."""
+    urls = list(dict.fromkeys(u for u in re.split(r"[,\s]+", (text or "").strip()) if u))
+    if not urls or len(urls) > MAX_IMAGES or len(",".join(urls)) > MAX_IMG_FIELD:
+        return None
+    return urls if all(re.fullmatch(r"(https://\S+|images/\S+)", u) for u in urls) else None
+
+
 ADDPRODUCT_USAGE = (
     "➕ <b>Додати товар</b>\n\n"
     "<code>/addproduct id | ціна | назва | опис | емодзі | фото</code>\n"
@@ -1267,7 +1280,7 @@ ADDPRODUCT_USAGE = (
     "<code>/addproduct ring1 | 599 | Vivienne Westwood Ring | Каблучка з орбом | 💍</code>\n\n"
     "• <b>id</b> — латиницею, цифри та _ (2–32 символи), має бути унікальним\n"
     "• <b>фото</b> за замовчуванням <code>images/id.jpg</code>: просто завантажте файл у папку images "
-    "репозиторію. Інше посилання (https://… або images/…) вкажіть шостим полем, «-» — без фото\n"
+    "репозиторію. Інші посилання (https://… або images/…) вкажіть шостим полем: кілька фото — через кому, «-» — без фото\n"
     "• розділяйте поля символом | ; сам символ | у тексті використовувати не можна")
 
 
@@ -1296,8 +1309,12 @@ async def cmd_addproduct(message: Message, command: CommandObject, db: Database)
         problems.append("опис: до 200 символів")
     if len(emoji) > 12:
         problems.append("емодзі: вкажіть один значок")
-    if img and not re.fullmatch(r"(https://\S+|images/\S+)", img):
-        problems.append("фото: https://… або images/файл.jpg (або «-» без фото)")
+    if img:
+        urls = parse_images(img)
+        if urls is None:
+            problems.append(f"фото: https://… або images/файл.jpg, до {MAX_IMAGES} через кому (або «-» без фото)")
+        else:
+            img = ",".join(urls)
     if problems:
         await message.answer("😕 Товар не додано:\n• " + "\n• ".join(problems) + "\n\nПриклад: /addproduct")
         return
@@ -1383,17 +1400,21 @@ async def cmd_toggleproduct(message: Message, command: CommandObject, db: Databa
 
 @router.message(Command("setimg"), F.from_user.id == ADMIN_ID)
 async def cmd_setimg(message: Message, command: CommandObject, db: Database) -> None:
-    """Змінює фото товару:  /setimg <id> <https://посилання або images/файл.jpg>"""
-    parts = (command.args or "").split()
-    if len(parts) != 2 or not re.fullmatch(r"(https://\S+|images/\S+)", parts[1]):
-        await message.answer("Використання: <code>/setimg id посилання</code>\n"
-                             "Посилання — https://… або шлях у репозиторії, напр. <code>images/watch.jpg</code>")
+    """Змінює фото товару:  /setimg <id> <url1, url2, url3>
+    До 10 фото. У БД вони зберігаються єдиним рядком через кому: перше показується в каталозі, усі — в галереї картки."""
+    parts = (command.args or "").strip().split(None, 1)
+    urls = parse_images(parts[1]) if len(parts) == 2 else None
+    if urls is None:
+        await message.answer(
+            "Використання: <code>/setimg id url1, url2, url3</code>\n"
+            f"До {MAX_IMAGES} фото через кому. Перше показується в каталозі, усі — в галереї картки товару.\n"
+            "Посилання — https://… або шлях у репозиторії, напр. <code>images/watch.jpg</code>")
         return
-    if not await dbrun(db.set_img, parts[0], parts[1]):
+    if not await dbrun(db.set_img, parts[0], ",".join(urls)):
         await message.answer("Товар не знайдено. Список id: /products")
         return
     product = await dbrun(db.get_product, parts[0])
-    await message.answer(f"✅ Фото змінено: <b>{esc(product['name'])}</b>")
+    await message.answer(f"✅ Фото змінено: <b>{esc(product['name'])}</b> — фото: {len(urls)}")
 
 
 @router.message(Command("setprice"), F.from_user.id == ADMIN_ID)
