@@ -36,6 +36,7 @@ import asyncio
 import hashlib
 import hmac
 import html
+import io
 import json
 import logging
 import os
@@ -58,7 +59,10 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import FSInputFile, KeyboardButton, Message, ReplyKeyboardMarkup, WebAppInfo
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import (CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
+                           Message, ReplyKeyboardMarkup, WebAppInfo)
 
 # ======================================================================
 # НАЛАШТУВАННЯ — ВСТАВТЕ СВОЇ ДАНІ
@@ -98,6 +102,11 @@ TURSO_TOKEN = os.getenv("TURSO_AUTH_TOKEN") or os.getenv("TURSO_TOKEN", "").stri
 #    Якщо Нова Пошта почне повертати помилку — отримайте безкоштовний ключ у особистому кабінеті
 #    business.novaposhta.ua (Налаштування → Безпека → Ключі API) і вкажіть його тут або в Render → Environment.
 NP_API_KEY = os.getenv("NP_API_KEY", "").strip()
+
+# 8) Ключ ImgBB для завантаження фото товарів з адмін-діалогів (/addproduct, /editproduct).
+#    Безкоштовний ключ: https://api.imgbb.com/  → «Get API key». Задайте в Render → Environment: IMGBB_API_KEY.
+IMGBB_API_KEY = os.getenv("IMGBB_API_KEY", "ВСТАВТЕ_КЛЮЧ_IMGBB").strip()
+IMGBB_URL = "https://api.imgbb.com/1/upload"
 
 # ----------------------------------------------------------------------
 # Бізнес-налаштування (мають збігатися з index.html)
@@ -400,6 +409,19 @@ class Database:
             self.execute(
                 'INSERT INTO products(id, name, price, "desc", img, emoji, available, pos) VALUES (?,?,?,?,?,?,1,?)',
                 (p["id"], p["name"], int(p["price"]), p.get("desc", ""), p.get("img", ""), p.get("emoji", "🛍"), int(nxt)))
+            return True
+
+    def update_product(self, product_id: str, fields: dict) -> bool:
+        """Оновлює поля товару (дозволено: name, price, desc, img, emoji). False — якщо товару немає
+        або передано нічого дозволеного."""
+        data = {k: v for k, v in fields.items() if k in ("name", "price", "desc", "img", "emoji")}
+        if not data:
+            return False
+        with self.tx():
+            if not self.execute("SELECT 1 FROM products WHERE id=?", (product_id,)).fetchone():
+                return False
+            sets = ", ".join(f'"{k}"=?' for k in data)            # "desc" — службове слово SQL, тому в лапках
+            self.execute(f"UPDATE products SET {sets} WHERE id=?", (*data.values(), product_id))
             return True
 
     def delete_product(self, product_id: str) -> bool:
@@ -1250,7 +1272,8 @@ async def cmd_products(message: Message, db: Database) -> None:
         current += line
     chunks.append(current + "\n"
                   "✅ є в наявності · ❌ немає\n"
-                  "<code>/addproduct</code> — додати товар\n"
+                  "<code>/addproduct</code> — додати товар (діалог)\n"
+                  "<code>/editproduct id</code> — редагувати товар\n"
                   "<code>/toggleproduct id</code> — змінити наявність\n"
                   "<code>/setprice id ціна</code> — змінити ціну\n"
                   "<code>/setimg id посилання</code> — змінити фото\n"
@@ -1275,6 +1298,8 @@ def parse_images(text: str) -> list[str] | None:
 
 ADDPRODUCT_USAGE = (
     "➕ <b>Додати товар</b>\n\n"
+    "Покроково (з фото): просто <code>/addproduct</code> без параметрів.\n\n"
+    "Швидко, в один рядок:\n"
     "<code>/addproduct id | ціна | назва | опис | емодзі | фото</code>\n"
     "Обов'язкові лише перші три поля. Приклад:\n"
     "<code>/addproduct ring1 | 599 | Vivienne Westwood Ring | Каблучка з орбом | 💍</code>\n\n"
@@ -1285,8 +1310,11 @@ ADDPRODUCT_USAGE = (
 
 
 @router.message(Command("addproduct"), F.from_user.id == ADMIN_ID)
-async def cmd_addproduct(message: Message, command: CommandObject, db: Database) -> None:
-    """Додає товар у каталог:  /addproduct id | ціна | назва | опис | емодзі | фото"""
+async def cmd_addproduct(message: Message, command: CommandObject, db: Database, state: FSMContext = None) -> None:
+    """/addproduct — покроковий діалог (FSM).  /addproduct id | ціна | назва | опис | емодзі | фото — швидкий запис в один рядок."""
+    if not command.args and state is not None:
+        await start_add_dialog(message, state)
+        return
     fields = [f.strip() for f in (command.args or "").split("|")]
     if not command.args or not 3 <= len(fields) <= 6:
         await message.answer(ADDPRODUCT_USAGE)
@@ -1482,6 +1510,426 @@ async def cmd_backup(message: Message, db: Database) -> None:
             os.remove(path)
         except OSError:
             pass
+
+
+# ======================================================================
+# АДМІНКА КАТАЛОГУ НА FSM: покрокове додавання / редагування товарів, фото — на ImgBB.
+# Усі обробники нижче — після звичайних команд, щоб команди (/products, /cancel …) працювали і під час діалогу.
+# Стан діалогу зберігається в пам'яті (MemoryStorage): після перезапуску бота незавершений діалог скидається.
+# ======================================================================
+class AddProduct(StatesGroup):
+    pid = State()
+    name = State()
+    price = State()
+    desc = State()
+    photos = State()
+    uploading = State()      # фото вже завантажуються: нові частини альбому ігноруємо
+
+
+class EditProduct(StatesGroup):
+    value = State()          # чекаємо нове значення назви / ціни / опису
+    photos = State()         # чекаємо нові фото (замінять поточні)
+    uploading = State()
+
+
+class PhotoUploadError(Exception):
+    """Не вдалося завантажити фото на ImgBB (текст — для адміна)."""
+
+
+def imgbb_ready() -> bool:
+    return bool(IMGBB_API_KEY) and "ВСТАВТЕ" not in IMGBB_API_KEY
+
+
+async def upload_photo_to_imgbb(bot: Bot, photo) -> str:
+    """Завантажує фото в пам'ять (io.BytesIO) і відправляє на ImgBB. photo — PhotoSize / Document або file_id.
+    Повертає пряме посилання на зображення (data.url)."""
+    if not imgbb_ready():
+        raise PhotoUploadError("не задано IMGBB_API_KEY (Render → Environment)")
+    buf = io.BytesIO()
+    try:
+        await bot.download(photo, destination=buf)
+    except TelegramAPIError as exc:
+        raise PhotoUploadError(f"Telegram не віддав файл ({exc})") from exc
+    form = aiohttp.FormData()
+    form.add_field("key", IMGBB_API_KEY)                  # ключ — у тілі запиту, а не в URL (щоб не потрапив у логи)
+    form.add_field("image", buf.getvalue(), filename="photo.jpg", content_type="image/jpeg")
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=40)) as session:
+            async with session.post(IMGBB_URL, data=form) as resp:
+                payload = await resp.json(content_type=None)
+    except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+        raise PhotoUploadError(f"немає зв'язку з ImgBB ({exc.__class__.__name__})") from exc
+    data = payload.get("data") if isinstance(payload, dict) else None
+    url = data.get("url") if isinstance(data, dict) else None
+    if not (isinstance(payload, dict) and payload.get("success") and url):
+        reason = payload.get("error", {}).get("message") if isinstance(payload, dict) and isinstance(payload.get("error"), dict) else None
+        raise PhotoUploadError(reason or "ImgBB повернув неочікувану відповідь")
+    return url
+
+
+async def upload_many(bot: Bot, items: list) -> list[str]:
+    """Завантажує всі фото (до 3 одночасно), зберігаючи порядок. Якщо хоч одне не вдалося — помилка для всього набору."""
+    sem = asyncio.Semaphore(3)
+
+    async def one(item):
+        async with sem:
+            return await upload_photo_to_imgbb(bot, item)
+
+    results = await asyncio.gather(*(one(i) for i in items), return_exceptions=True)
+    for number, result in enumerate(results, 1):
+        if isinstance(result, Exception):
+            reason = str(result) if isinstance(result, PhotoUploadError) else f"{result.__class__.__name__}"
+            raise PhotoUploadError(f"фото №{number}: {reason}")
+    return list(results)
+
+
+# --- альбоми (MediaGroup): Telegram надсилає кожне фото альбому окремим повідомленням ---
+ALBUM_WAIT = 1.2          # скільки секунд чекаємо решту фото альбому
+_albums: dict[tuple[int, str], dict] = {}
+
+
+def media_item(message: Message):
+    """Фото (найбільший розмір) або файл-зображення → об'єкт для завантаження; None — якщо це не картинка."""
+    if message.photo:
+        return message.photo[-1]
+    doc = message.document
+    if doc is not None and (doc.mime_type or "").startswith("image/"):
+        return doc
+    return None
+
+
+async def collect_album(message: Message, on_ready) -> None:
+    """Одне фото — одразу on_ready([фото]). Альбом: збираємо всі частини (за media_group_id) і викликаємо on_ready
+    ОДИН раз, коли надходження стихло; порядок — за message_id, як у альбомі."""
+    item = media_item(message)
+    if item is None:
+        return
+    if not message.media_group_id:
+        await on_ready([item])
+        return
+    key = (message.chat.id, str(message.media_group_id))
+    entry = _albums.get(key)
+    if entry is None:
+        entry = _albums[key] = {"items": {}}
+
+        async def finalize() -> None:
+            try:
+                await asyncio.sleep(ALBUM_WAIT)
+                done = _albums.pop(key, None)
+                if done:
+                    await on_ready([it for _, it in sorted(done["items"].items())][:MAX_IMAGES])
+            except Exception:
+                log.exception("Помилка обробки альбому")
+
+        entry["task"] = asyncio.create_task(finalize())
+    entry["items"][message.message_id] = item
+
+
+# --- спільна валідація полів ---
+COMMAND_IN_DIALOG = "Це схоже на команду. Завершіть діалог відповіддю або надішліть /cancel."
+
+
+def validate_field(field: str, text: str) -> tuple[object, str]:
+    """(значення, помилка). Для опису «-» означає порожній опис."""
+    text = text.strip()
+    if field == "name":
+        return (text, "") if 1 <= len(text) <= 120 else (None, "😕 Назва: від 1 до 120 символів.")
+    if field == "price":
+        digits = text.replace(" ", "")
+        return (int(digits), "") if re.fullmatch(r"\d{1,7}", digits) and int(digits) >= 1 else (None, "😕 Ціна: ціле число більше нуля, напр. 1299.")
+    if field == "desc":
+        if text == "-":
+            return "", ""
+        return (text, "") if len(text) <= 600 else (None, "😕 Опис: до 600 символів.")
+    return None, "Невідоме поле."
+
+
+def product_summary(p: dict) -> str:
+    photos = len([u for u in (p["img"] or "").split(",") if u.strip()])
+    desc = (esc(p["desc"][:300]) + ("…" if len(p["desc"]) > 300 else "")) if p["desc"] else "—"
+    return (f"✏️ <b>{esc(p['name'])}</b> (<code>{esc(p['id'])}</code>)\n"
+            f"Ціна: <b>{money(p['price'])}</b>\n"
+            f"Наявність: {'✅ є' if p['available'] else '❌ немає'}\n"
+            f"Фото: {photos}\n"
+            f"Опис: {desc}\n\nЩо змінити?")
+
+
+def edit_menu(pid: str) -> InlineKeyboardMarkup:
+    def btn(text: str, data: str) -> InlineKeyboardButton:
+        return InlineKeyboardButton(text=text, callback_data=data)
+
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [btn("✏️ Назва", f"ed:name:{pid}"), btn("💰 Ціна", f"ed:price:{pid}")],
+        [btn("📝 Опис", f"ed:desc:{pid}"), btn("🖼 Фото", f"ed:photo:{pid}")],
+        [btn("✅ Готово", "ed:done")],
+    ])
+
+
+async def show_edit_menu(message: Message, db: Database, pid: str, prefix: str = "") -> None:
+    product = await dbrun(db.get_product, pid)
+    if not product:
+        await message.answer("Товар не знайдено (можливо, його видалили).")
+        return
+    await message.answer((prefix + "\n\n" if prefix else "") + product_summary(product), reply_markup=edit_menu(pid))
+
+
+@router.message(Command("cancel"), F.from_user.id == ADMIN_ID)
+async def cmd_cancel(message: Message, state: FSMContext) -> None:
+    if await state.get_state() is None:
+        await message.answer("Немає активного діалогу.")
+        return
+    await state.clear()
+    await message.answer("❌ Скасовано. Нічого не змінено.")
+
+
+@router.message(Command("editproduct"), F.from_user.id == ADMIN_ID)
+async def cmd_editproduct(message: Message, command: CommandObject, state: FSMContext, db: Database) -> None:
+    """Меню редагування товару:  /editproduct <id>"""
+    parts = (command.args or "").split()
+    if len(parts) != 1:
+        await message.answer("Використання: <code>/editproduct id</code>\nСписок id: /products")
+        return
+    product = await dbrun(db.get_product, parts[0].lower())
+    if not product:
+        await message.answer("Товар не знайдено. Список id: /products")
+        return
+    await state.clear()
+    await message.answer(product_summary(product), reply_markup=edit_menu(product["id"]))
+
+
+# ---------------------------- додавання товару ----------------------------
+async def start_add_dialog(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(AddProduct.pid)
+    warn = "" if imgbb_ready() else "\n⚠️ IMGBB_API_KEY не задано — фото не завантажаться (на кроці 5 надішліть «-»)."
+    await message.answer(
+        "➕ <b>Новий товар</b> — крок 1/5\n"
+        "Введіть <b>ID</b> латиницею (цифри та _ дозволені), напр. <code>bag_lv</code>.\n"
+        "/cancel — скасувати" + warn)
+
+
+@router.message(AddProduct.pid, F.text, F.from_user.id == ADMIN_ID)
+async def add_step_pid(message: Message, state: FSMContext, db: Database) -> None:
+    pid = message.text.strip().lower()
+    if pid.startswith("/"):
+        await message.answer(COMMAND_IN_DIALOG)
+        return
+    if not re.fullmatch(r"[a-z0-9_]{2,32}", pid):
+        await message.answer("😕 ID: лише латиниця, цифри та _ (2–32 символи). Спробуйте ще раз або /cancel.")
+        return
+    if await dbrun(db.get_product, pid):
+        await message.answer(f"Товар <code>{esc(pid)}</code> уже існує. Введіть інший ID "
+                             f"(змінити наявний: /editproduct {esc(pid)}).")
+        return
+    await state.update_data(pid=pid)
+    await state.set_state(AddProduct.name)
+    await message.answer("Крок 2/5. Введіть <b>назву</b> товару.")
+
+
+@router.message(AddProduct.name, F.text, F.from_user.id == ADMIN_ID)
+async def add_step_name(message: Message, state: FSMContext) -> None:
+    if message.text.startswith("/"):
+        await message.answer(COMMAND_IN_DIALOG)
+        return
+    value, error = validate_field("name", message.text)
+    if error:
+        await message.answer(error + " Спробуйте ще раз або /cancel.")
+        return
+    await state.update_data(name=value)
+    await state.set_state(AddProduct.price)
+    await message.answer("Крок 3/5. Введіть <b>ціну</b> (ціле число, грн).")
+
+
+@router.message(AddProduct.price, F.text, F.from_user.id == ADMIN_ID)
+async def add_step_price(message: Message, state: FSMContext) -> None:
+    if message.text.startswith("/"):
+        await message.answer(COMMAND_IN_DIALOG)
+        return
+    value, error = validate_field("price", message.text)
+    if error:
+        await message.answer(error + " Спробуйте ще раз або /cancel.")
+        return
+    await state.update_data(price=value)
+    await state.set_state(AddProduct.desc)
+    await message.answer("Крок 4/5. Введіть <b>опис</b> (до 600 символів) або «-», якщо без опису.")
+
+
+@router.message(AddProduct.desc, F.text, F.from_user.id == ADMIN_ID)
+async def add_step_desc(message: Message, state: FSMContext) -> None:
+    if message.text.startswith("/"):
+        await message.answer(COMMAND_IN_DIALOG)
+        return
+    value, error = validate_field("desc", message.text)
+    if error:
+        await message.answer(error + " Спробуйте ще раз або /cancel.")
+        return
+    await state.update_data(desc=value)
+    await state.set_state(AddProduct.photos)
+    await message.answer("Крок 5/5. Надішліть <b>фото</b>: одне або альбом (до 10). «-» — без фото.")
+
+
+async def finish_add(message: Message, state: FSMContext, bot: Bot, db: Database, items: list) -> None:
+    """Завантажує фото на ImgBB (якщо є) і зберігає новий товар. Викликається один раз на фото / альбом."""
+    if await state.get_state() != AddProduct.photos.state:
+        return                                           # пізня частина альбому або повторний виклик — ігноруємо
+    await state.set_state(AddProduct.uploading)
+    urls: list[str] = []
+    if items:
+        await message.answer(f"⏳ Завантажую фото ({len(items)}) на ImgBB…")
+        try:
+            urls = await upload_many(bot, items)
+        except PhotoUploadError as exc:
+            await state.set_state(AddProduct.photos)
+            await message.answer(f"❌ Не вдалося завантажити: {esc(str(exc))}\n"
+                                 "Надішліть фото ще раз, «-» — без фото, /cancel — скасувати.")
+            return
+    data = await state.get_data()
+    product = {"id": data["pid"], "name": data["name"], "price": data["price"], "desc": data.get("desc", ""),
+               "emoji": "🛍", "img": ",".join(urls)}
+    created = await dbrun(db.add_product, product)
+    await state.clear()
+    if not created:
+        await message.answer(f"Товар <code>{esc(product['id'])}</code> уже існує — нічого не додано.")
+        return
+    await message.answer(f"✅ Товар додано: <b>{esc(product['name'])}</b> — {money(product['price'])}\n"
+                         f"id: <code>{esc(product['id'])}</code> · фото: {len(urls)}\n"
+                         "У магазині з'явиться за хвилину (або після повторного відкриття).\n"
+                         f"Змінити: /editproduct {esc(product['id'])}")
+
+
+@router.message(AddProduct.photos, F.content_type.in_({"photo", "document"}), F.from_user.id == ADMIN_ID)
+async def add_step_photos(message: Message, state: FSMContext, bot: Bot, db: Database) -> None:
+    if media_item(message) is None:
+        await message.answer("Це не зображення. Надішліть фото, «-» — без фото, /cancel — скасувати.")
+        return
+
+    async def ready(items: list) -> None:
+        await finish_add(message, state, bot, db, items)
+
+    await collect_album(message, ready)
+
+
+@router.message(AddProduct.photos, F.text, F.from_user.id == ADMIN_ID)
+async def add_step_photos_text(message: Message, state: FSMContext, bot: Bot, db: Database) -> None:
+    if message.text.strip() == "-":
+        await finish_add(message, state, bot, db, [])
+    else:
+        await message.answer(COMMAND_IN_DIALOG if message.text.startswith("/")
+                             else "Надішліть фото (одне або альбом), «-» — без фото, /cancel — скасувати.")
+
+
+# ---------------------------- редагування товару ----------------------------
+@router.callback_query(F.data.startswith("ed:"), F.from_user.id == ADMIN_ID)
+async def cb_edit(callback: CallbackQuery, state: FSMContext, db: Database) -> None:
+    parts = (callback.data or "").split(":", 2)           # ed:<дія>[:<id>]
+    action, pid = parts[1], (parts[2] if len(parts) > 2 else "")
+    msg = callback.message
+    if action == "done":
+        await state.clear()
+        try:
+            await msg.edit_reply_markup(reply_markup=None)
+        except TelegramAPIError:
+            pass
+        await msg.answer("✅ Готово.")
+        await callback.answer()
+        return
+    product = await dbrun(db.get_product, pid)
+    if not product:
+        await callback.answer("Товар не знайдено", show_alert=True)
+        return
+    prompts = {
+        "name": "✏️ Введіть нову <b>назву</b>.",
+        "price": "💰 Введіть нову <b>ціну</b> (ціле число, грн).",
+        "desc": "📝 Введіть новий <b>опис</b> (до 600 символів) або «-», щоб очистити.",
+    }
+    if action in prompts:
+        await state.set_state(EditProduct.value)
+        await state.update_data(pid=pid, field=action)
+        text = prompts[action] + "\n/cancel — скасувати"
+    elif action == "photo":
+        await state.set_state(EditProduct.photos)
+        await state.update_data(pid=pid)
+        text = ("🖼 Надішліть нові фото (одне або альбом до 10) — вони <b>замінять</b> поточні.\n"
+                "«-» — прибрати всі фото. /cancel — скасувати.")
+    else:
+        await callback.answer()
+        return
+    try:
+        await msg.edit_reply_markup(reply_markup=None)    # кнопки старого меню більше не потрібні
+    except TelegramAPIError:
+        pass
+    await msg.answer(text)
+    await callback.answer()
+
+
+@router.message(EditProduct.value, F.text, F.from_user.id == ADMIN_ID)
+async def edit_step_value(message: Message, state: FSMContext, db: Database) -> None:
+    if message.text.startswith("/"):
+        await message.answer(COMMAND_IN_DIALOG)
+        return
+    data = await state.get_data()
+    pid, field = data["pid"], data["field"]
+    value, error = validate_field(field, message.text)
+    if error:
+        await message.answer(error + " Спробуйте ще раз або /cancel.")
+        return
+    updated = await dbrun(db.update_product, pid, {field: value})
+    await state.clear()
+    if not updated:
+        await message.answer("Товар не знайдено (можливо, його видалили).")
+        return
+    await show_edit_menu(message, db, pid, "✅ Збережено.")
+
+
+async def finish_edit_photos(message: Message, state: FSMContext, bot: Bot, db: Database, items: list) -> None:
+    if await state.get_state() != EditProduct.photos.state:
+        return
+    await state.set_state(EditProduct.uploading)
+    pid = (await state.get_data())["pid"]
+    urls: list[str] = []
+    if items:
+        await message.answer(f"⏳ Завантажую фото ({len(items)}) на ImgBB…")
+        try:
+            urls = await upload_many(bot, items)
+        except PhotoUploadError as exc:
+            await state.set_state(EditProduct.photos)
+            await message.answer(f"❌ Не вдалося завантажити: {esc(str(exc))}\nПоточні фото НЕ змінено. "
+                                 "Надішліть фото ще раз, «-» — прибрати всі, /cancel — скасувати.")
+            return
+    updated = await dbrun(db.update_product, pid, {"img": ",".join(urls)})
+    await state.clear()
+    if not updated:
+        await message.answer("Товар не знайдено (можливо, його видалили).")
+        return
+    await show_edit_menu(message, db, pid, f"✅ Фото замінено ({len(urls)})." if urls else "✅ Фото прибрано.")
+
+
+@router.message(EditProduct.photos, F.content_type.in_({"photo", "document"}), F.from_user.id == ADMIN_ID)
+async def edit_step_photos(message: Message, state: FSMContext, bot: Bot, db: Database) -> None:
+    if media_item(message) is None:
+        await message.answer("Це не зображення. Надішліть фото, «-» — прибрати всі, /cancel — скасувати.")
+        return
+
+    async def ready(items: list) -> None:
+        await finish_edit_photos(message, state, bot, db, items)
+
+    await collect_album(message, ready)
+
+
+@router.message(EditProduct.photos, F.text, F.from_user.id == ADMIN_ID)
+async def edit_step_photos_text(message: Message, state: FSMContext, bot: Bot, db: Database) -> None:
+    if message.text.strip() == "-":
+        await finish_edit_photos(message, state, bot, db, [])
+    else:
+        await message.answer(COMMAND_IN_DIALOG if message.text.startswith("/")
+                             else "Надішліть фото (одне або альбом), «-» — прибрати всі, /cancel — скасувати.")
+
+
+@router.message(AddProduct.uploading, F.from_user.id == ADMIN_ID)
+@router.message(EditProduct.uploading, F.from_user.id == ADMIN_ID)
+async def busy_uploading(message: Message) -> None:
+    if media_item(message) is None:                       # решту частин альбому мовчки ігноруємо
+        await message.answer("⏳ Зачекайте, фото ще завантажуються…")
 
 
 @router.message(F.web_app_data)
@@ -1701,6 +2149,8 @@ async def main() -> None:
         log.warning("ADMIN_ID не змінено — замовлення не дійдуть до вас!")
     if "ВАШ_НІК" in WEBAPP_URL:
         log.warning("WEBAPP_URL не змінено — кнопка відкриватиме неіснуючу сторінку!")
+    if not imgbb_ready():
+        log.warning("IMGBB_API_KEY не задано — фото в /addproduct та /editproduct не завантажуватимуться")
     if not PUBLIC_URL:
         log.warning("PUBLIC_URL не задано — Mini App не зможе звʼязатися з сервером (працюватиме без бази)")
 
